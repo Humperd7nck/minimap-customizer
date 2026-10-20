@@ -44,8 +44,7 @@ import net.runelite.client.ui.overlay.OverlayManager;
 @PluginDescriptor(
     name = "Minimap Customizer",
     description = "Customize native minimap icons, entity markers, dot colors, and player direction with flexible visibility settings",
-    tags = {"minimap", "dots", "icons", "filter", "direction", "npcs", "players", "items", "markers"},
-    enabledByDefault = false
+    tags = {"minimap", "dots", "icons", "filter", "direction", "npcs", "players", "items", "markers"}
 )
 public class MinimapFilterPlugin extends Plugin
 {

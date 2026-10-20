@@ -1,6 +1,6 @@
 # Minimap Customizer
 
-Minimap Customizer lets you decide what appears on your RuneLite minimap, from map icons and entity markers to foliage and tree symbols. And, it lets you change the icons of certain entities.
+Minimap Customizer lets you decide what appears on your RuneLite minimap, from map icons and entity markers to foliage and tree symbols.
 
 ## Features
 
