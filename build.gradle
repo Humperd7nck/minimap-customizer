@@ -16,7 +16,7 @@ repositories {
 def runeLiteVersion = 'latest.release'
 def pluginMainClass = 'com.minimapfilter.MinimapFilterPluginTest'
 
-version = '0.1.0'
+version = '2.0.0-rc.1'
 group = 'com.minimapfilter'
 
 dependencies {

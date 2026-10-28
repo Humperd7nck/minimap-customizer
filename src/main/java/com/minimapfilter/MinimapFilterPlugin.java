@@ -17,6 +17,7 @@ import javax.imageio.ImageIO;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.EnumComposition;
 import net.runelite.api.GameState;
 import net.runelite.api.GameObject;
 import net.runelite.api.Tile;
@@ -24,6 +25,8 @@ import net.runelite.api.IndexedSprite;
 import net.runelite.api.ObjectComposition;
 import net.runelite.api.SpriteID;
 import net.runelite.api.SpritePixels;
+import net.runelite.api.events.BeforeRender;
+import net.runelite.api.events.MenuEntryAdded;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.DecorativeObjectSpawned;
 import net.runelite.api.events.GroundObjectSpawned;
@@ -191,7 +194,6 @@ public class MinimapFilterPlugin extends Plugin
         SpriteID.MAP_ICON_COOKING_RANGE,
         SpriteID.MAP_ICON_POTTERY_WHEEL,
         SpriteID.MAP_ICON_WINDMILL,
-        SpriteID.MAP_ICON_SLAYER_MASTER,
         SpriteID.MAP_ICON_LOOM,
         SpriteID.MAP_ICON_BREWERY,
         SpriteID.MAP_ICON_DAIRY_CHURN,
@@ -239,6 +241,7 @@ public class MinimapFilterPlugin extends Plugin
     };
 
     private static final int[] TASK_MASTER_ICONS = {SpriteID.MAP_ICON_TASK_MASTER};
+    private static final int[] SLAYER_MASTER_ICONS = {SpriteID.MAP_ICON_SLAYER_MASTER};
     private static final int[] PUB_ICONS = {SpriteID.MAP_ICON_PUB};
 
     private static final int[] TUTOR_ICONS = {
@@ -284,6 +287,7 @@ public class MinimapFilterPlugin extends Plugin
         SAILING,
         TUTOR,
         TASK_MASTER,
+        SLAYER_MASTER,
         PUB,
         OTHER_SERVICE
     }
@@ -853,6 +857,29 @@ public class MinimapFilterPlugin extends Plugin
     private EntityMarkerOverlay entityMarkerOverlay;
 
     @Inject
+    private WildernessPlayerOverlay wildernessPlayerOverlay;
+
+    private boolean wildernessPlayerDotSuppressed;
+
+    @Inject
+    private SquareHudController squareHud;
+
+    @Inject
+    private SquareHudBackdropOverlay squareHudBackdrop;
+
+    @Inject
+    private SquareHudOverlay squareHudOverlay;
+
+    @Inject
+    private SquareHudTerrainCornersOverlay squareHudTerrainCornersOverlay;
+
+    @Inject
+    private SquareHudTerrainSeamOverlay squareHudTerrainSeamOverlay;
+
+    @Inject
+    private MinimapLayoutControls layoutControls;
+
+    @Inject
     private MinimapMarkerAssets markerAssets;
 
     @Inject
@@ -871,6 +898,11 @@ public class MinimapFilterPlugin extends Plugin
 
     /** Native sprite fingerprint -> filter category. */
     private final Map<IconSignature, IconCategory> iconCatalog = new HashMap<>();
+
+    /** Explicit map-key classifications take precedence over Sailing slot/visual guesses. */
+    private final Map<IconSignature, IconCategory> namedIconCatalog = new HashMap<>();
+    private boolean namedIconCatalogComplete;
+    private int namedCatalogRetryTicks;
 
     /** Live Client#getMapIcons() slot -> category when object identity is needed. */
     private final Map<Integer, IconCategory> iconIndexOverrides = new HashMap<>();
@@ -906,6 +938,7 @@ public class MinimapFilterPlugin extends Plugin
     @Provides
     MinimapFilterConfig provideConfig(ConfigManager configManager)
     {
+        MinimapLayoutMigration.migrate(configManager);
         return configManager.getConfig(MinimapFilterConfig.class);
     }
 
@@ -943,6 +976,9 @@ public class MinimapFilterPlugin extends Plugin
     @Subscribe
     public void onProfileChanged(ProfileChanged event)
     {
+        MinimapLayoutMigration.migrate(configManager);
+        squareHud.settingsChanged();
+        layoutControls.settingsChanged();
         migrateTreeVisibilitySettings();
         clientThread.invokeLater(this::applyFilters);
     }
@@ -950,11 +986,19 @@ public class MinimapFilterPlugin extends Plugin
     @Override
     protected void startUp()
     {
+        MinimapLayoutMigration.migrate(configManager);
         migrateTreeVisibilitySettings();
-        treeMapSceneOverlay = new TreeMapSceneOverlay(this);
+        treeMapSceneOverlay = new TreeMapSceneOverlay(this, squareHud);
         overlayManager.add(treeMapSceneOverlay);
         overlayManager.add(entityMarkerOverlay);
+        overlayManager.add(wildernessPlayerOverlay);
         overlayManager.add(playerDirectionOverlay);
+        overlayManager.add(squareHudBackdrop);
+        overlayManager.add(squareHudTerrainCornersOverlay);
+        overlayManager.add(squareHudTerrainSeamOverlay);
+        overlayManager.add(squareHudOverlay);
+        squareHud.start();
+        layoutControls.start();
         clientThread.invokeLater(() ->
         {
             createTransparentSprites();
@@ -968,8 +1012,15 @@ public class MinimapFilterPlugin extends Plugin
     @Override
     protected void shutDown()
     {
+        layoutControls.stop();
+        squareHud.stop();
+        overlayManager.remove(squareHudTerrainSeamOverlay);
+        overlayManager.remove(squareHudTerrainCornersOverlay);
+        overlayManager.remove(squareHudOverlay);
+        overlayManager.remove(squareHudBackdrop);
         overlayManager.remove(playerDirectionOverlay);
         overlayManager.remove(entityMarkerOverlay);
+        overlayManager.remove(wildernessPlayerOverlay);
         if (treeMapSceneOverlay != null)
         {
             overlayManager.remove(treeMapSceneOverlay);
@@ -978,6 +1029,8 @@ public class MinimapFilterPlugin extends Plugin
         clientThread.invokeLater(() ->
         {
             restoreDots();
+            wildernessPlayerOverlay.clear();
+            wildernessPlayerDotSuppressed = false;
             restoreLiveIcons();
             restoreMapSceneFilters();
             Arrays.fill(visibleDotSprites, null);
@@ -985,6 +1038,9 @@ public class MinimapFilterPlugin extends Plugin
             transparentDot = null;
             transparentIcon = null;
             iconCatalog.clear();
+            namedIconCatalog.clear();
+            namedIconCatalogComplete = false;
+            namedCatalogRetryTicks = 0;
             iconIndexOverrides.clear();
             visualMatchCache.clear();
             visualMissCache.clear();
@@ -1004,8 +1060,10 @@ public class MinimapFilterPlugin extends Plugin
     @Subscribe
     public void onConfigChanged(ConfigChanged event)
     {
+        squareHud.settingsChanged();
         if (MinimapFilterConfig.GROUP.equals(event.getGroup()))
         {
+            layoutControls.settingsChanged();
             clientThread.invokeLater(this::applyFilters);
             return;
         }
@@ -1021,9 +1079,25 @@ public class MinimapFilterPlugin extends Plugin
         }
     }
 
+    @Subscribe(priority = -100)
+    public void onMenuEntryAdded(MenuEntryAdded event)
+    {
+        squareHud.filterHiddenFooterMenus();
+    }
+
+    @Subscribe(priority = -100)
+    public void onBeforeRender(BeforeRender event)
+    {
+        squareHud.update();
+        squareHudTerrainCornersOverlay.refreshOnClientThread();
+        refreshWildernessPlayerDots();
+    }
+
     @Subscribe
     public void onGameStateChanged(GameStateChanged event)
     {
+        squareHud.onGameStateChanged(event.getGameState());
+        if (event.getGameState() != GameState.LOGGED_IN) { wildernessPlayerOverlay.clear(); }
         if (event.getGameState() == GameState.STARTING)
         {
             Arrays.fill(visibleDotSprites, null);
@@ -1125,9 +1199,18 @@ public class MinimapFilterPlugin extends Plugin
     @Subscribe
     public void onGameTick(GameTick event)
     {
+        squareHud.refreshLocation();
         if (client.getGameState() != GameState.LOGGED_IN)
         {
             return;
+        }
+
+        // Sprite/enum archives can be unavailable briefly after login. Retry at most
+        // once per ten ticks for two minutes, without scanning live slot numbers.
+        if (!namedIconCatalogComplete && namedCatalogRetryTicks < 200
+            && ++namedCatalogRetryTicks % 10 == 0)
+        {
+            rebuildNamedIconCatalog();
         }
 
         // The vanilla client can rebuild the live icon array as regions/objects
@@ -1241,7 +1324,10 @@ public class MinimapFilterPlugin extends Plugin
             config.groundItemDotColor(), NativeDotColors.ITEM);
         setDot(mapDots, DOT_NPC, nativeNpcDots,
             config.attackableNpcDotColor(), NativeDotColors.NPC);
-        setDot(mapDots, DOT_PLAYER, config.showPlayers(),
+        wildernessPlayerOverlay.refresh();
+        wildernessPlayerOverlay.setFallbackDot(visibleDotSprites[DOT_PLAYER], config.otherPlayerDotColor());
+        wildernessPlayerDotSuppressed = wildernessPlayerOverlay.isReplacingOtherPlayers();
+        setDot(mapDots, DOT_PLAYER, config.showPlayers() && !wildernessPlayerDotSuppressed,
             config.otherPlayerDotColor(), NativeDotColors.PLAYER);
         setDot(mapDots, DOT_FRIEND, config.showFriends(),
             config.friendDotColor(), NativeDotColors.FRIEND);
@@ -1251,6 +1337,24 @@ public class MinimapFilterPlugin extends Plugin
             config.friendsChatDotColor(), NativeDotColors.FRIENDS_CHAT);
         setDot(mapDots, DOT_CLAN, config.showClan(),
             config.clanDotColor(), NativeDotColors.CLAN);
+    }
+
+    private void refreshWildernessPlayerDots()
+    {
+        if (!config.wildernessPlayerSkulls() && !wildernessPlayerDotSuppressed) { return; }
+        wildernessPlayerOverlay.refresh();
+        boolean suppress = wildernessPlayerOverlay.isReplacingOtherPlayers();
+        SpritePixels[] dots = client.getMapDots();
+        if (dots == null || dots.length <= DOT_PLAYER) { return; }
+        if (suppress == wildernessPlayerDotSuppressed
+            && (!suppress || dots[DOT_PLAYER] == transparentDot)) { return; }
+
+        createTransparentSprites();
+        refreshVisibleDotSprites();
+        wildernessPlayerOverlay.setFallbackDot(visibleDotSprites[DOT_PLAYER], config.otherPlayerDotColor());
+        setDot(dots, DOT_PLAYER, config.showPlayers() && !suppress,
+            config.otherPlayerDotColor(), NativeDotColors.PLAYER);
+        wildernessPlayerDotSuppressed = suppress;
     }
 
     private void setDot(SpritePixels[] mapDots, int index, boolean visible,
@@ -1336,14 +1440,61 @@ public class MinimapFilterPlugin extends Plugin
         addIconGroup(SHOP_ICONS, IconCategory.SHOP);
         addIconGroup(TUTOR_ICONS, IconCategory.TUTOR);
         addIconGroup(TASK_MASTER_ICONS, IconCategory.TASK_MASTER);
+        addIconGroup(SLAYER_MASTER_ICONS, IconCategory.SLAYER_MASTER);
         addIconGroup(PUB_ICONS, IconCategory.PUB);
         addIconGroup(OTHER_SERVICE_ICONS, IconCategory.OTHER_SERVICE);
+        namedIconCatalog.clear();
+        namedCatalogRetryTicks = 0;
+        rebuildNamedIconCatalog();
         rebuildSailingIconIndexOverrides();
 
         log.debug("Loaded {} native minimap icon signatures and {} index overrides",
             iconCatalog.size(), iconIndexOverrides.size());
     }
 
+
+    private void rebuildNamedIconCatalog()
+    {
+        namedIconCatalogComplete = false;
+        try
+        {
+            // Slayer also has a stable named API constant. Install its exact
+            // signature even if the map-key enums are not ready yet.
+            SpritePixels[] slayer = client.getSprites(client.getIndexSprites(),
+                SpriteID.MAP_ICON_SLAYER_MASTER, 0);
+            if (slayer != null && slayer.length > 0 && slayer[0] != null)
+            {
+                namedIconCatalog.put(new IconSignature(slayer[0]), IconCategory.SLAYER_MASTER);
+            }
+            EnumComposition names = client.getEnum(NamedMapIconCatalog.CATEGORY_NAMES);
+            EnumComposition sprites = client.getEnum(NamedMapIconCatalog.CATEGORY_SPRITES);
+            if (names == null || sprites == null) { return; }
+            Set<String> loadedNames = new HashSet<>();
+            for (NamedMapIconCatalog.Entry entry : NamedMapIconCatalog.resolve(
+                names.getKeys(), names.getStringVals(), sprites.getKeys(), sprites.getIntVals()))
+            {
+                SpritePixels[] nativeSprites = client.getSprites(client.getIndexSprites(), entry.spriteId, 0);
+                if (nativeSprites == null || nativeSprites.length == 0 || nativeSprites[0] == null) { continue; }
+                IconCategory category;
+                switch (entry.category)
+                {
+                    case SHOP: category = IconCategory.SHOP; break;
+                    case SLAYER_MASTER: category = IconCategory.SLAYER_MASTER; break;
+                    default: category = IconCategory.OTHER_SERVICE; break;
+                }
+                namedIconCatalog.put(new IconSignature(nativeSprites[0]), category);
+                loadedNames.add(entry.name.toLowerCase(java.util.Locale.ROOT));
+            }
+            namedIconCatalogComplete = loadedNames.size() == NamedMapIconCatalog.REQUESTED_COUNT;
+            log.debug("Resolved {} of {} requested map-key icons", loadedNames.size(),
+                NamedMapIconCatalog.REQUESTED_COUNT);
+        }
+        catch (RuntimeException ex)
+        {
+            // An unavailable cache must not stop the other, already working filters.
+            log.debug("Map-key icon definitions are not ready", ex);
+        }
+    }
 
     private void loadVisualReferences()
     {
@@ -1774,10 +1925,14 @@ public class MinimapFilterPlugin extends Plugin
             }
 
             IconSignature signature = new IconSignature(nativeSprite);
-            // Confirmed capture fingerprints take priority over approximate
-            // Sailing/Shop matching and scene-slot overrides. In particular,
-            // the Bond Tutor must never inherit an unrelated Sailing match.
-            IconCategory category = classifyCapturedMapIcon(nativeSprite);
+            // Named map-key signatures and confirmed captures outrank guessed
+            // scene slots and visual matches. Shop icons must not inherit Sailing
+            // just because the local icon array was reordered.
+            IconCategory category = namedIconCatalog.get(signature);
+            if (category == null)
+            {
+                category = classifyCapturedMapIcon(nativeSprite);
+            }
             if (category == null)
             {
                 category = iconIndexOverrides.get(i);
@@ -2322,7 +2477,8 @@ public class MinimapFilterPlugin extends Plugin
             }
 
             BufferedImage image = getSharedTreeFrameImage(mapSceneId, mapScene);
-            net.runelite.api.Point center = gameObject.getMinimapLocation();
+            net.runelite.api.Point center = squareHud.isActive()
+                ? squareHud.project(gameObject.getLocalLocation()) : gameObject.getMinimapLocation();
             if (image == null || center == null)
             {
                 continue;
@@ -2490,6 +2646,8 @@ public class MinimapFilterPlugin extends Plugin
                 return config.showTutors();
             case TASK_MASTER:
                 return config.showTaskMaster();
+            case SLAYER_MASTER:
+                return config.showSlayerMasters();
             case PUB:
                 return config.showPubs();
             case OTHER_SERVICE:

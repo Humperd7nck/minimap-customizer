@@ -17,7 +17,10 @@ public class MinimapFilterConfigTest
         for (java.lang.reflect.Method method : MinimapFilterConfig.class.getDeclaredMethods())
         {
             if (method.isAnnotationPresent(net.runelite.client.config.ConfigItem.class)
-                && method.getReturnType() == boolean.class)
+                && method.getReturnType() == boolean.class
+                && !method.getName().equals("enableSquareMinimap")
+                && !method.getName().equals("colorLootingBagIconsByValue")
+                && !method.getName().equals("wildernessPlayerSkulls"))
             {
                 assertTrue("Visibility setting is unchecked: " + method.getName(),
                     (Boolean) method.invoke(config));
@@ -25,6 +28,17 @@ public class MinimapFilterConfigTest
             }
         }
         assertTrue("Expected all visibility options to be inspected", count >= 20);
+    }
+
+    @Test
+    public void terrainRenderingAndCaptureAreNotUserFacingSettings()
+    {
+        for (java.lang.reflect.Method method : MinimapFilterConfig.class.getDeclaredMethods())
+        {
+            assertFalse("Obsolete diagnostic setting: " + method.getName(),
+                method.getName().startsWith("squareHudTerrain")
+                    || method.getName().equals("squareHudRenderCapture"));
+        }
     }
 
     @Test

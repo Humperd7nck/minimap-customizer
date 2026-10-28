@@ -8,6 +8,7 @@ import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 import javax.imageio.ImageIO;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -19,6 +20,7 @@ import net.runelite.api.Perspective;
 import net.runelite.api.Player;
 import net.runelite.api.Scene;
 import net.runelite.api.Tile;
+import net.runelite.api.TileItem;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.client.ui.overlay.Overlay;
@@ -37,18 +39,21 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 public class EntityMarkerOverlay extends Overlay
 {
     private static final BufferedImage SWORD_ICON = createSwordIcon();
-    private static final BufferedImage LOOTING_BAG_ICON = createLootingBagIcon();
 
     private final Client client;
     private final MinimapFilterConfig config;
     private final MinimapMarkerAssets assets;
+    private final SquareHudController hud;
+    private final LootingBagMarkers lootingBags;
 
     @Inject
-    public EntityMarkerOverlay(Client client, MinimapFilterConfig config, MinimapMarkerAssets assets)
+    public EntityMarkerOverlay(Client client, MinimapFilterConfig config, MinimapMarkerAssets assets, SquareHudController hud, LootingBagMarkers lootingBags)
     {
         this.client = client;
         this.config = config;
         this.assets = assets;
+        this.hud = hud;
+        this.lootingBags = lootingBags;
         setLayer(OverlayLayer.ABOVE_WIDGETS);
         setPosition(OverlayPosition.DYNAMIC);
         setPriority(PRIORITY_HIGH);
@@ -62,8 +67,29 @@ public class EntityMarkerOverlay extends Overlay
             return null;
         }
 
-        renderNpcMarkers(graphics);
-        renderGroundItemMarkers(graphics);
+        if (hud.isActive())
+        {
+            if (!hud.isPaintable())
+            {
+                return null;
+            }
+            Graphics2D clipped = (Graphics2D) graphics.create();
+            try
+            {
+                clipped.clip(hud.markerClip());
+                renderNpcMarkers(clipped);
+                renderGroundItemMarkers(clipped);
+            }
+            finally
+            {
+                clipped.dispose();
+            }
+        }
+        else
+        {
+            renderNpcMarkers(graphics);
+            renderGroundItemMarkers(graphics);
+        }
         return null;
     }
 
@@ -100,7 +126,8 @@ public class EntityMarkerOverlay extends Overlay
                 continue;
             }
 
-            net.runelite.api.Point location = npc.getMinimapLocation();
+            net.runelite.api.Point location = hud.isActive()
+                ? hud.project(npc.getLocalLocation()) : npc.getMinimapLocation();
             if (location == null)
             {
                 continue;
@@ -150,6 +177,7 @@ public class EntityMarkerOverlay extends Overlay
             return;
         }
 
+        lootingBags.beginFrame();
         Player localPlayer = client.getLocalPlayer();
         WorldView worldView = client.getTopLevelWorldView();
         if (localPlayer == null || worldView == null)
@@ -176,8 +204,11 @@ public class EntityMarkerOverlay extends Overlay
         // every frame while still exceeding the minimap's visible radius.
         int centerX = playerLocation.getSceneX();
         int centerY = playerLocation.getSceneY();
-        int minX = Math.max(0, centerX - 22);
-        int maxX = Math.min(tiles[plane].length - 1, centerX + 22);
+        int radius = hud.isActive()
+            ? Math.min(104, (int) Math.ceil(Math.sqrt(2.0) * SquareHudGeometry.MAP_SIZE
+                / (2.0 * Math.max(0.25, client.getMinimapZoom()))) + 2) : 22;
+        int minX = Math.max(0, centerX - radius);
+        int maxX = Math.min(tiles[plane].length - 1, centerX + radius);
 
         for (int x = minX; x <= maxX; x++)
         {
@@ -187,21 +218,31 @@ public class EntityMarkerOverlay extends Overlay
                 continue;
             }
 
-            int minY = Math.max(0, centerY - 22);
-            int maxY = Math.min(column.length - 1, centerY + 22);
+            int minY = Math.max(0, centerY - radius);
+            int maxY = Math.min(column.length - 1, centerY + radius);
             for (int y = minY; y <= maxY; y++)
             {
                 Tile tile = column[y];
-                if (tile == null || tile.getGroundItems() == null || tile.getGroundItems().isEmpty())
-                {
-                    continue;
-                }
+                if (tile == null) { continue; }
+                List<TileItem> items = tile.getGroundItems();
+                if (items == null || items.isEmpty()) { continue; }
 
-                net.runelite.api.Point location = Perspective.getMiniMapImageLocation(
-                    client, tile.getLocalLocation(), LOOTING_BAG_ICON);
-                if (location != null)
+                if (hud.isActive())
                 {
-                    graphics.drawImage(LOOTING_BAG_ICON, location.getX(), location.getY(), null);
+                    net.runelite.api.Point center = hud.project(tile.getLocalLocation());
+                    if (center != null)
+                    {
+                        drawCentered(graphics, lootingBags.imageFor(items), center);
+                    }
+                }
+                else
+                {
+                    net.runelite.api.Point location = Perspective.getMiniMapImageLocation(
+                        client, tile.getLocalLocation(), LootingBagIcons.original());
+                    if (location != null)
+                    {
+                        graphics.drawImage(lootingBags.imageFor(items), location.getX(), location.getY(), null);
+                    }
                 }
             }
         }
@@ -289,53 +330,5 @@ public class EntityMarkerOverlay extends Overlay
         return image;
     }
 
-    private static BufferedImage createLootingBagIcon()
-    {
-        BufferedImage image = new BufferedImage(13, 13, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = image.createGraphics();
-        try
-        {
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
 
-            Color outline = new Color(67, 43, 24, 245);
-            Color sack = new Color(198, 147, 73, 255);
-            Color sackLight = new Color(236, 191, 105, 255);
-            Color tie = new Color(117, 72, 33, 255);
-            Color coin = new Color(255, 213, 71, 255);
-
-            // Tied neck.
-            g.setColor(outline);
-            g.fillRoundRect(4, 1, 5, 4, 2, 2);
-            g.setColor(sackLight);
-            g.fillRoundRect(5, 1, 3, 3, 2, 2);
-            g.setColor(tie);
-            g.fillRect(4, 4, 5, 2);
-
-            // Full bag body.
-            Polygon body = new Polygon(
-                new int[] {4, 9, 11, 11, 9, 4, 2, 2},
-                new int[] {4, 4, 7, 10, 12, 12, 10, 7},
-                8);
-            g.setColor(outline);
-            g.fillPolygon(body);
-
-            Polygon inner = new Polygon(
-                new int[] {5, 8, 10, 10, 8, 4, 3, 3},
-                new int[] {5, 5, 7, 9, 11, 11, 9, 7},
-                8);
-            g.setColor(sack);
-            g.fillPolygon(inner);
-
-            g.setColor(sackLight);
-            g.drawLine(4, 7, 5, 10);
-            g.setColor(coin);
-            g.fillOval(7, 7, 2, 2);
-        }
-        finally
-        {
-            g.dispose();
-        }
-        return image;
-    }
 }

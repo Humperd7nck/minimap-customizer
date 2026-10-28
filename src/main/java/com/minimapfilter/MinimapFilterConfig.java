@@ -19,9 +19,101 @@ public interface MinimapFilterConfig extends Config
     String ENTITY_DOTS = "entityDots";
 
     @ConfigSection(
-        name = "Marker colors",
-        description = "Customize the native minimap dot colors. The direction arrow, sword and looting bag retain their artwork.",
+        name = "Looting bag colors (ground item icon)",
+        description = "To enable: Entity markers > Ground items > Looting bag. Colors use the combined value of every stack on a tile.",
         position = 1,
+        closedByDefault = true
+    )
+    String LOOTING_BAG_COLORS = "lootingBagColors";
+
+    @ConfigItem(
+        keyName = "colorLootingBagIconsByValue",
+        name = "Color Looting bag icons by value",
+        description = "Sum unit price times quantity for all ground items on each tile, using RuneLite's configured price source. Any missing price keeps the original brown/gold bag.",
+        section = LOOTING_BAG_COLORS,
+        position = 0
+    )
+    default boolean colorLootingBagIconsByValue()
+    {
+        return false;
+    }
+
+    @ConfigItem(
+        keyName = "lootingBagColorUnder1k",
+        name = "0–999 gp",
+        description = "Bag cloth color for a combined tile value of 0–999 gp. Right-click to reset. Outline, tie and gold coin are retained.",
+        section = LOOTING_BAG_COLORS,
+        position = 1
+    )
+    default Color lootingBagColorUnder1k()
+    {
+        return LootingBagValueTier.GRAY.defaultColor();
+    }
+
+    @ConfigItem(
+        keyName = "lootingBagColor1k",
+        name = "1k–9,999 gp",
+        description = "Bag cloth color for a combined tile value of 1,000–9,999 gp. Right-click to reset. Outline, tie and gold coin are retained.",
+        section = LOOTING_BAG_COLORS,
+        position = 2
+    )
+    default Color lootingBagColor1k()
+    {
+        return LootingBagValueTier.BROWN.defaultColor();
+    }
+
+    @ConfigItem(
+        keyName = "lootingBagColor10k",
+        name = "10k–99,999 gp",
+        description = "Bag cloth color for a combined tile value of 10,000–99,999 gp. Right-click to reset. Outline, tie and gold coin are retained.",
+        section = LOOTING_BAG_COLORS,
+        position = 3
+    )
+    default Color lootingBagColor10k()
+    {
+        return LootingBagValueTier.GREEN.defaultColor();
+    }
+
+    @ConfigItem(
+        keyName = "lootingBagColor100k",
+        name = "100k–999,999 gp",
+        description = "Bag cloth color for a combined tile value of 100,000–999,999 gp. Right-click to reset. Outline, tie and gold coin are retained.",
+        section = LOOTING_BAG_COLORS,
+        position = 4
+    )
+    default Color lootingBagColor100k()
+    {
+        return LootingBagValueTier.BLUE.defaultColor();
+    }
+
+    @ConfigItem(
+        keyName = "lootingBagColor1m",
+        name = "1m–9,999,999 gp",
+        description = "Bag cloth color for a combined tile value of 1,000,000–9,999,999 gp. Right-click to reset. Outline, tie and gold coin are retained.",
+        section = LOOTING_BAG_COLORS,
+        position = 5
+    )
+    default Color lootingBagColor1m()
+    {
+        return LootingBagValueTier.RED.defaultColor();
+    }
+
+    @ConfigItem(
+        keyName = "lootingBagColor10m",
+        name = "10m+ gp",
+        description = "Bag cloth color for a combined tile value of 10,000,000+ gp. Right-click to reset. Outline, tie and gold coin are retained.",
+        section = LOOTING_BAG_COLORS,
+        position = 6
+    )
+    default Color lootingBagColor10m()
+    {
+        return LootingBagValueTier.PURPLE.defaultColor();
+    }
+
+    @ConfigSection(
+        name = "Marker colors",
+        description = "Customize only native minimap dots. Looting bag value colors have their own section.",
+        position = 2,
         closedByDefault = true
     )
     String MARKER_COLORS = "markerColors";
@@ -29,9 +121,64 @@ public interface MinimapFilterConfig extends Config
     @ConfigSection(
         name = "Map icons",
         description = "Choose which native map icon categories are visible.",
-        position = 2
+        position = 3
     )
     String MAP_ICONS = "mapIcons";
+
+    @ConfigSection(
+        name = "Layout",
+        description = "Compass, square minimap and Info panel.",
+        position = -1
+    )
+    String LAYOUT = "layout";
+
+    @ConfigItem(
+        keyName = "showCompass",
+        name = "Show compass",
+        description = "Show the native compass in Classic or the diamond in Square HUD. Hidden compasses do not accept clicks.",
+        section = LAYOUT,
+        position = 0
+    )
+    default boolean showCompass()
+    {
+        return true;
+    }
+
+    @ConfigItem(
+        keyName = "enableSquareMinimap",
+        name = "Enable square minimap",
+        description = "Use a square map with resource blocks and an Info panel. Resizable layouts only; fixed mode keeps Classic.",
+        section = LAYOUT,
+        position = 1
+    )
+    default boolean enableSquareMinimap()
+    {
+        return false;
+    }
+
+    @ConfigItem(
+        keyName = "squareHudFooterMode",
+        name = "Info panel view",
+        description = "Always show the Info panel, or reveal it on mouseover. Requires Enable square minimap; the selection is kept while disabled.",
+        section = LAYOUT,
+        position = 2
+    )
+    default SquareHudFooterMode squareHudFooterMode()
+    {
+        return SquareHudFooterMode.ALWAYS_VISIBLE;
+    }
+
+    @ConfigItem(
+        keyName = "infoPanelText",
+        name = "Info panel text",
+        description = "Zone, your computer's local time, or world tile coordinates. Requires Enable square minimap. Hover for details.",
+        section = LAYOUT,
+        position = 3
+    )
+    default InfoPanelText infoPanelText()
+    {
+        return InfoPanelText.ZONE;
+    }
 
     @ConfigItem(
         keyName = "playerMarkerStyle",
@@ -94,11 +241,23 @@ public interface MinimapFilterConfig extends Config
     }
 
     @ConfigItem(
+        keyName = "wildernessPlayerSkulls",
+        name = "Wilderness player skulls",
+        description = "Replace Other players dots in normal-world Wilderness: red inside your combat-level bracket, white outside. Not actual PvP skulls or an attack/safety guarantee. Friends, clan and team keep their own markers. Special worlds or unknown range keep normal dots. Requires Other players.",
+        section = ENTITY_DOTS,
+        position = 5
+    )
+    default boolean wildernessPlayerSkulls()
+    {
+        return false;
+    }
+
+    @ConfigItem(
         keyName = "showFriends",
         name = "Friends",
         description = "Show friend dots.",
         section = ENTITY_DOTS,
-        position = 5
+        position = 6
     )
     default boolean showFriends()
     {
@@ -110,7 +269,7 @@ public interface MinimapFilterConfig extends Config
         name = "Team",
         description = "Show team-cape dots.",
         section = ENTITY_DOTS,
-        position = 6
+        position = 7
     )
     default boolean showTeam()
     {
@@ -122,7 +281,7 @@ public interface MinimapFilterConfig extends Config
         name = "Friends chat",
         description = "Show friends-chat member dots.",
         section = ENTITY_DOTS,
-        position = 7
+        position = 8
     )
     default boolean showFriendsChat()
     {
@@ -134,7 +293,7 @@ public interface MinimapFilterConfig extends Config
         name = "Clan",
         description = "Show clan-member dots.",
         section = ENTITY_DOTS,
-        position = 8
+        position = 9
     )
     default boolean showClan()
     {
@@ -466,11 +625,23 @@ public interface MinimapFilterConfig extends Config
     }
 
     @ConfigItem(
+        keyName = "showSlayerMasters",
+        name = "Slayer Masters",
+        description = "Show Slayer Master map icons, independently of Skilling facilities.",
+        section = MAP_ICONS,
+        position = 19
+    )
+    default boolean showSlayerMasters()
+    {
+        return true;
+    }
+
+    @ConfigItem(
         keyName = "showPubs",
         name = "Pubs",
         description = "Show pub and tavern map icons.",
         section = MAP_ICONS,
-        position = 19
+        position = 20
     )
     default boolean showPubs()
     {
@@ -480,9 +651,9 @@ public interface MinimapFilterConfig extends Config
     @ConfigItem(
         keyName = "showOtherServices",
         name = "Other services",
-        description = "Show other utility icons, including Speedrunning shop, Newspaper trader, and Clan Hub.",
+        description = "Show other utility icons, including Junk checker, Taxidermist, Speedrunning shop, Newspaper trader, and Clan Hub.",
         section = MAP_ICONS,
-        position = 20
+        position = 21
     )
     default boolean showOtherServices()
     {

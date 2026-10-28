@@ -46,12 +46,14 @@ public class PlayerDirectionOverlay extends Overlay
 
     private final Client client;
     private final MinimapFilterConfig config;
+    private final SquareHudController hud;
 
     @Inject
-    public PlayerDirectionOverlay(Client client, MinimapFilterConfig config)
+    public PlayerDirectionOverlay(Client client, MinimapFilterConfig config, SquareHudController hud)
     {
         this.client = client;
         this.config = config;
+        this.hud = hud;
         setLayer(OverlayLayer.ABOVE_WIDGETS);
         setPosition(OverlayPosition.DYNAMIC);
         setPriority(PRIORITY_HIGH);
@@ -66,6 +68,10 @@ public class PlayerDirectionOverlay extends Overlay
             return null;
         }
 
+        if (hud.isActive() && !hud.isPaintable())
+        {
+            return null;
+        }
         Player player = client.getLocalPlayer();
         if (player == null)
         {
@@ -73,7 +79,7 @@ public class PlayerDirectionOverlay extends Overlay
         }
 
         LocalPoint local = player.getLocalLocation();
-        net.runelite.api.Point center = player.getMinimapLocation();
+        net.runelite.api.Point center = hud.isActive() ? hud.project(local) : player.getMinimapLocation();
         if (local == null || center == null)
         {
             return null;
@@ -91,7 +97,8 @@ public class PlayerDirectionOverlay extends Overlay
             local.getY() + dy,
             local.getWorldView());
 
-        net.runelite.api.Point facing = Perspective.localToMinimap(client, facingPoint);
+        net.runelite.api.Point facing = hud.isActive()
+            ? hud.project(facingPoint) : Perspective.localToMinimap(client, facingPoint);
         if (facing == null)
         {
             return null;
@@ -148,6 +155,10 @@ public class PlayerDirectionOverlay extends Overlay
         Graphics2D g = (Graphics2D) graphics.create();
         try
         {
+            if (hud.isActive())
+            {
+                g.clip(hud.markerClip());
+            }
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
 

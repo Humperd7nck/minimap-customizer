@@ -15,11 +15,13 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 final class TreeMapSceneOverlay extends Overlay
 {
     private final MinimapFilterPlugin plugin;
+    private final SquareHudController hud;
 
-    TreeMapSceneOverlay(MinimapFilterPlugin plugin)
+    TreeMapSceneOverlay(MinimapFilterPlugin plugin, SquareHudController hud)
     {
         super(plugin);
         this.plugin = plugin;
+        this.hud = hud;
         setLayer(OverlayLayer.ABOVE_WIDGETS);
         setPosition(OverlayPosition.DYNAMIC);
         setPriority(PRIORITY_LOW);
@@ -28,7 +30,27 @@ final class TreeMapSceneOverlay extends Overlay
     @Override
     public Dimension render(Graphics2D graphics)
     {
-        plugin.renderSeparatedTreeObjects(graphics);
+        if (hud.isActive())
+        {
+            if (!hud.isPaintable())
+            {
+                return null;
+            }
+            Graphics2D clipped = (Graphics2D) graphics.create();
+            try
+            {
+                clipped.clip(hud.markerClip());
+                plugin.renderSeparatedTreeObjects(clipped);
+            }
+            finally
+            {
+                clipped.dispose();
+            }
+        }
+        else
+        {
+            plugin.renderSeparatedTreeObjects(graphics);
+        }
         return null;
     }
 }
