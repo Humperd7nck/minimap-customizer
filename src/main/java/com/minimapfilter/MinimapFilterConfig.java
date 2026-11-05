@@ -5,6 +5,7 @@ import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
+import net.runelite.client.config.Notification;
 
 @ConfigGroup(MinimapFilterConfig.GROUP)
 public interface MinimapFilterConfig extends Config
@@ -128,28 +129,29 @@ public interface MinimapFilterConfig extends Config
     @ConfigSection(
         name = "Layout",
         description = "Compass, square minimap and Info panel.",
-        position = -1
+        position = -2
     )
     String LAYOUT = "layout";
 
-    @ConfigItem(
-        keyName = "showCompass",
-        name = "Show compass",
-        description = "Show the native compass in Classic or the diamond in Square HUD. Hidden compasses do not accept clicks.",
-        section = LAYOUT,
-        position = 0
-    )
-    default boolean showCompass()
-    {
-        return true;
-    }
+    @ConfigSection(name = "Alarm/timer alerts", description = "Timer and Alarm completion alerts.", position = -1, closedByDefault = true)
+    String TOOL_ALERTS = "toolAlerts";
+
+    @ConfigItem(keyName = "toolNotifications", name = "Sound / system alerts",
+        description = "Timer and Alarm use RuneLite notification preferences by default. Use the cog to customize sound, screen flash and notifications while focused.",
+        section = TOOL_ALERTS, position = 0)
+    default Notification toolNotifications() { return Notification.ON; }
+
+    @ConfigItem(keyName = "toolCompletionBanner", name = "Completion banner",
+        description = "Show a persistent in-client Timer/Alarm notice even when focused. Click its X to dismiss.",
+        section = TOOL_ALERTS, position = 1)
+    default boolean toolCompletionBanner() { return true; }
 
     @ConfigItem(
         keyName = "enableSquareMinimap",
         name = "Enable square minimap",
         description = "Use a square map with resource blocks and an Info panel. Resizable layouts only; fixed mode keeps Classic.",
         section = LAYOUT,
-        position = 1
+        position = 0
     )
     default boolean enableSquareMinimap()
     {
@@ -161,7 +163,7 @@ public interface MinimapFilterConfig extends Config
         name = "Info panel view",
         description = "Always show the Info panel, or reveal it on mouseover. Requires Enable square minimap; the selection is kept while disabled.",
         section = LAYOUT,
-        position = 2
+        position = 1
     )
     default SquareHudFooterMode squareHudFooterMode()
     {
@@ -171,13 +173,49 @@ public interface MinimapFilterConfig extends Config
     @ConfigItem(
         keyName = "infoPanelText",
         name = "Info panel text",
-        description = "Zone, your computer's local time, or world tile coordinates. Requires Enable square minimap. Hover for details.",
+        description = "Choose the information or performance metric shown in the Info panel. Click the displayed text to switch quickly. Requires Enable square minimap.",
         section = LAYOUT,
-        position = 3
+        position = 2
     )
     default InfoPanelText infoPanelText()
     {
         return InfoPanelText.ZONE;
+    }
+
+    @ConfigItem(
+        keyName = "enableToolsButton",
+        name = "Tools button",
+        description = "Enable Tools button on Info panel",
+        section = LAYOUT,
+        position = 3
+    )
+    default boolean enableToolsButton()
+    {
+        return true;
+    }
+
+    @ConfigItem(
+        keyName = "enableTrackingButton",
+        name = "Tracking button",
+        description = "Enable Tracking button on Info panel",
+        section = LAYOUT,
+        position = 4
+    )
+    default boolean enableTrackingButton()
+    {
+        return true;
+    }
+
+    @ConfigItem(
+        keyName = "showCompass",
+        name = "Show compass",
+        description = "Show the compass in the Square minimap. Classic circular minimaps are not changed.",
+        section = LAYOUT,
+        position = 5
+    )
+    default boolean showCompass()
+    {
+        return true;
     }
 
     @ConfigItem(
@@ -195,7 +233,7 @@ public interface MinimapFilterConfig extends Config
     @ConfigItem(
         keyName = "attackableNpcMarkerStyle",
         name = "Attackable NPCs",
-        description = "Use the native dot, a compact sword icon, or no marker for attackable NPCs.",
+        description = "Use the native dot, a small, medium, or big sword icon, or no marker for attackable NPCs.",
         section = ENTITY_DOTS,
         position = 1
     )
@@ -241,23 +279,11 @@ public interface MinimapFilterConfig extends Config
     }
 
     @ConfigItem(
-        keyName = "wildernessPlayerSkulls",
-        name = "Wilderness player skulls",
-        description = "Replace Other players dots in normal-world Wilderness: red inside your combat-level bracket, white outside. Not actual PvP skulls or an attack/safety guarantee. Friends, clan and team keep their own markers. Special worlds or unknown range keep normal dots. Requires Other players.",
-        section = ENTITY_DOTS,
-        position = 5
-    )
-    default boolean wildernessPlayerSkulls()
-    {
-        return false;
-    }
-
-    @ConfigItem(
         keyName = "showFriends",
         name = "Friends",
         description = "Show friend dots.",
         section = ENTITY_DOTS,
-        position = 6
+        position = 5
     )
     default boolean showFriends()
     {
@@ -269,7 +295,7 @@ public interface MinimapFilterConfig extends Config
         name = "Team",
         description = "Show team-cape dots.",
         section = ENTITY_DOTS,
-        position = 7
+        position = 6
     )
     default boolean showTeam()
     {
@@ -281,7 +307,7 @@ public interface MinimapFilterConfig extends Config
         name = "Friends chat",
         description = "Show friends-chat member dots.",
         section = ENTITY_DOTS,
-        position = 8
+        position = 7
     )
     default boolean showFriendsChat()
     {
@@ -293,7 +319,7 @@ public interface MinimapFilterConfig extends Config
         name = "Clan",
         description = "Show clan-member dots.",
         section = ENTITY_DOTS,
-        position = 9
+        position = 8
     )
     default boolean showClan()
     {

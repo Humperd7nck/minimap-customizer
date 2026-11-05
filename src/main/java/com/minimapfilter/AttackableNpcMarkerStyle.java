@@ -3,7 +3,9 @@ package com.minimapfilter;
 public enum AttackableNpcMarkerStyle
 {
     NATIVE_DOT("Native dot"),
-    SWORD("Sword"),
+    SMALL_SWORD_B("Small sword"),
+    SMALL_SWORD_C("Med Sword"),
+    SWORD("Big sword"),
     OFF("Off");
 
     private final String label;

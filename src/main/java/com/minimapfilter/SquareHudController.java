@@ -40,6 +40,7 @@ import net.runelite.api.widgets.WidgetSizeMode;
 import net.runelite.api.widgets.WidgetType;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.game.SpriteManager;
+import net.runelite.client.ui.FontManager;
 import net.runelite.client.input.MouseAdapter;
 import net.runelite.client.input.MouseManager;
 import org.slf4j.Logger;
@@ -98,8 +99,12 @@ final class SquareHudController
         final boolean footerVisible;
         final String infoText;
         final String infoTooltip;
+        final String infoCompactText;
+        final InfoPanelText infoMode;
         final boolean showCompass;
         final Rectangle[] footerButtons;
+        final Rectangle infoBounds;
+        final InfoPanelToolDrawer.View drawer;
 
         Snapshot(SquareHudGeometry geometry, int[] values, int[] maxima, BufferedImage[] icons,
             boolean[] available, boolean[] selected, int healthState, boolean stamina,
@@ -125,11 +130,37 @@ final class SquareHudController
             boolean footerVisible, String infoText, String infoTooltip, Rectangle[] footerButtons,
             boolean showCompass)
         {
+            this(geometry, values, maxima, icons, available, selected, healthState, stamina,
+                soulreaper, northAngle, paint, compassClickable, footerVisible, infoText,
+                infoTooltip, footerButtons, showCompass, infoText, InfoPanelText.ZONE);
+        }
+
+        Snapshot(SquareHudGeometry geometry, int[] values, int[] maxima, BufferedImage[] icons,
+            boolean[] available, boolean[] selected, int healthState, boolean stamina,
+            boolean soulreaper, double northAngle, boolean paint, boolean compassClickable,
+            boolean footerVisible, String infoText, String infoTooltip, Rectangle[] footerButtons,
+            boolean showCompass, String compactText, InfoPanelText infoMode)
+        {
+            this(geometry, values, maxima, icons, available, selected, healthState, stamina,
+                soulreaper, northAngle, paint, compassClickable, footerVisible, infoText, infoTooltip,
+                footerButtons, showCompass, compactText, infoMode, null);
+        }
+
+        Snapshot(SquareHudGeometry geometry, int[] values, int[] maxima, BufferedImage[] icons,
+            boolean[] available, boolean[] selected, int healthState, boolean stamina,
+            boolean soulreaper, double northAngle, boolean paint, boolean compassClickable,
+            boolean footerVisible, String infoText, String infoTooltip, Rectangle[] footerButtons,
+            boolean showCompass, String compactText, InfoPanelText infoMode, InfoPanelToolDrawer.View drawer)
+        {
+            this.drawer = drawer;
+            this.infoCompactText = compactText;
+            this.infoMode = infoMode == null ? InfoPanelText.ZONE : infoMode;
             this.footerVisible = footerVisible;
             this.infoText = infoText;
             this.infoTooltip = infoTooltip;
             this.showCompass = showCompass;
             this.footerButtons = footerButtons;
+            this.infoBounds = drawer == null ? geometry.zoneText(footerButtons) : drawer.layout.primaryText;
             this.geometry = geometry;
             Area clip = new Area(geometry.map());
             if (showCompass) { clip.subtract(new Area(geometry.compass())); }
@@ -193,6 +224,11 @@ final class SquareHudController
     private final SquareHudNativeMap nativeMap = new SquareHudNativeMap();
     private final NativeCompassVisibility nativeCompass;
     private final SquareHudInfoText infoText = new SquareHudInfoText();
+    @Inject
+    private InfoPanelService infoPanel;
+    @Inject private InfoPanelDrawerIcons drawerIcons;
+    private boolean drawerHasRoom;
+    private int drawerSpace;
     private final BufferedImage[] cachedIcons = new BufferedImage[4];
     private final int[] cachedIconIds = {-1, -1, -1, -1};
     private volatile Snapshot snapshot;
@@ -234,6 +270,7 @@ final class SquareHudController
     private boolean consumedCompassClick;
     private int consumedFooterButton;
     private int consumedFooterClick;
+    private InfoPanelText pendingInfoClick;
     private final SquareHudFooterVisibility footerVisibility = new SquareHudFooterVisibility();
     private final SquareHudWidgetEdits footerHiddenEdits = new SquareHudWidgetEdits();
     private final Set<Integer> footerWidgetIds = new HashSet<>();
@@ -269,6 +306,21 @@ final class SquareHudController
             consumedCompassClick = false;
             consumedFooterButton = 0;
             consumedFooterClick = 0;
+            pendingInfoClick = null;
+            if (infoPanel != null && infoPanel.prepareReminderInput().mousePressed(event)) { return event; }
+            InfoPanelToolDrawer drawer = prepareDrawerInput();
+            boolean drawerPress = drawer != null && drawer.owns(event.getPoint());
+            if (!event.isConsumed() && infoPanel != null && !drawerPress && infoPanel.dismissOnCanvasPress())
+            {
+                consumedFooterButton = event.getButton();
+                consumedFooterClick = event.getButton();
+                event.consume();
+                return event;
+            }
+            InfoPanelVolumeBar volume = prepareVolumeInput();
+            if (volume != null && volume.mousePressed(event)) { return event; }
+            if (infoPanel != null && infoPanel.drawerVolumeBar().mousePressed(event)) { return event; }
+            if (drawer != null && drawer.mousePressed(event)) { return event; }
             Snapshot view = snapshot;
             if (!event.isConsumed() && event.getButton() == MouseEvent.BUTTON1
                 && !event.isAltDown() && !event.isShiftDown() && !event.isControlDown()
@@ -295,6 +347,12 @@ final class SquareHudController
             {
                 consumedFooterButton = event.getButton();
                 consumedFooterClick = event.getButton();
+                if (event.getButton() == MouseEvent.BUTTON1 && !event.isAltDown()
+                    && !event.isShiftDown() && !event.isControlDown() && !event.isMetaDown()
+                    && view.infoMode != InfoPanelText.VOLUME && view.infoBounds.contains(event.getPoint()))
+                {
+                    pendingInfoClick = view.infoMode;
+                }
                 event.consume();
             }
             return event;
@@ -303,9 +361,22 @@ final class SquareHudController
         @Override
         public MouseEvent mouseReleased(MouseEvent event)
         {
+            if (infoPanel != null && infoPanel.prepareReminderInput().mouseReleased(event)) { return event; }
+            InfoPanelVolumeBar volume = prepareVolumeInput();
+            if (volume != null && volume.mouseReleased(event)) { return event; }
+            if (infoPanel != null && infoPanel.drawerVolumeBar().mouseReleased(event)) { return event; }
+            InfoPanelToolDrawer drawer = prepareDrawerInput();
+            if (drawer != null)
+            {
+                InfoPanelToolDrawer.Action action = drawer.mouseReleased(event);
+                if (event.isConsumed()) { infoPanel.drawerAction(action, event); return event; }
+            }
             if (consumedFooterButton != 0 && event.getButton() == consumedFooterButton)
             {
                 consumedFooterButton = 0;
+                Snapshot view = snapshot;
+                if (view == null || !view.paint || !view.footerVisible
+                    || !view.infoBounds.contains(event.getPoint())) { pendingInfoClick = null; }
                 event.consume();
             }
             if (event.getButton() == MouseEvent.BUTTON1 && consumedCompassPress)
@@ -319,10 +390,25 @@ final class SquareHudController
         @Override
         public MouseEvent mouseClicked(MouseEvent event)
         {
+            if (infoPanel != null && infoPanel.prepareReminderInput().mouseClicked(event)) { return event; }
+            InfoPanelVolumeBar volume = prepareVolumeInput();
+            if (volume != null && volume.mouseClicked(event)) { return event; }
+            if (infoPanel != null && infoPanel.drawerVolumeBar().mouseClicked(event)) { return event; }
+            InfoPanelToolDrawer drawer = prepareDrawerInput();
+            if (drawer != null && drawer.mouseClicked(event)) { return event; }
             if (consumedFooterClick != 0 && event.getButton() == consumedFooterClick)
             {
                 consumedFooterClick = 0;
                 event.consume();
+                Snapshot view = snapshot;
+                InfoPanelText mode = pendingInfoClick;
+                pendingInfoClick = null;
+                if (mode != null && infoPanel != null && view != null && view.paint && view.footerVisible
+                    && view.infoMode == mode && view.infoBounds.contains(event.getPoint())
+                    && !client.isMenuOpen())
+                {
+                    infoPanel.openFromClick(mode, event);
+                }
             }
             if (event.getButton() == MouseEvent.BUTTON1 && consumedCompassClick)
             {
@@ -331,7 +417,64 @@ final class SquareHudController
             }
             return event;
         }
+
+        @Override
+        public MouseEvent mouseDragged(MouseEvent event)
+        {
+            if (infoPanel != null && infoPanel.prepareReminderInput().mouseDragged(event)) { return event; }
+            InfoPanelVolumeBar volume = prepareVolumeInput();
+            if (volume != null && volume.mouseDragged(event)) { return event; }
+            if (infoPanel != null && infoPanel.drawerVolumeBar().mouseDragged(event)) { return event; }
+            InfoPanelToolDrawer drawer = prepareDrawerInput();
+            if (drawer != null) { drawer.mouseDragged(event); }
+            return event;
+        }
+
+        @Override
+        public MouseEvent mouseMoved(MouseEvent event)
+        {
+            InfoPanelVolumeBar volume = prepareVolumeInput();
+            if (volume != null) { volume.mouseMoved(event); }
+            if (infoPanel != null) { infoPanel.drawerVolumeBar().mouseMoved(event); }
+            InfoPanelToolDrawer drawer = prepareDrawerInput();
+            if (drawer != null) { drawer.mouseMoved(event); }
+            return event;
+        }
+
+        @Override
+        public MouseEvent mouseEntered(MouseEvent event) { return mouseMoved(event); }
     };
+
+    InfoPanelVolumeBar volumeBar() { return infoPanel == null ? null : infoPanel.volumeBar(); }
+
+    private InfoPanelToolDrawer prepareDrawerInput()
+    { return infoPanel == null ? null : infoPanel.prepareDrawerInput(snapshot, started); }
+
+    InfoPanelVolumeBar drawerVolumeBar() { return infoPanel == null ? null : infoPanel.drawerVolumeBar(); }
+    boolean volumeMuted() { return infoPanel != null && infoPanel.volumeMuted(); }
+    InfoPanelDrawerIcons drawerIcons() { return drawerIcons; }
+    InfoPanelText openPopupMode() { return infoPanel == null ? null : infoPanel.openPopupMode(); }
+    SquareHudInfoText.Content toolContent(InfoPanelText mode)
+    { return infoPanel == null ? SquareHudInfoText.Content.EMPTY : infoPanel.content(mode); }
+
+    private InfoPanelVolumeBar prepareVolumeInput()
+    {
+        InfoPanelVolumeBar bar = volumeBar();
+        if (bar == null) { return null; }
+        Snapshot view = snapshot;
+        boolean usable = started && config.enableSquareMinimap() && view != null && view.paint
+            && view.footerVisible && config.infoPanelText() == view.infoMode;
+        boolean focused = usable && !client.isMenuOpen() && client.getGameState() == GameState.LOGGED_IN
+            && client.getCanvas() != null && client.getCanvas().isFocusOwner();
+        boolean primary = usable && view.infoMode == InfoPanelText.VOLUME;
+        boolean drawer = usable && view.drawer != null && view.drawer.shows(InfoPanelText.VOLUME)
+            && infoPanel.drawer().allows(InfoPanelText.VOLUME)
+            && view.drawer.state.generation == infoPanel.drawer().state().generation;
+        // Coordinates are already translated by Stretched Mode. Never translate them twice.
+        bar.update(primary ? view.infoBounds : null, primary, focused);
+        infoPanel.drawerVolumeBar().update(drawer ? view.drawer.layout.content : null, drawer, focused);
+        return bar;
+    }
 
     void start()
     {
@@ -348,11 +491,14 @@ final class SquareHudController
     void stop()
     {
         started = false;
+        if (infoPanel != null) { infoPanel.drawer().reset(); infoPanel.drawerVolumeBar().suspend(); }
+        if (infoPanel != null) { infoPanel.volumeBar().suspend(); }
         snapshot = null;
         consumedCompassPress = false;
         consumedCompassClick = false;
         consumedFooterButton = 0;
         consumedFooterClick = 0;
+        pendingInfoClick = null;
         mouseManager.unregisterMouseListener(compassMouse);
         clientThread.invokeLater(() ->
         {
@@ -407,18 +553,18 @@ final class SquareHudController
             faulted = false;
             restore();
             refreshClassicOrbsGroup();
-            nativeCompass.update(config.showCompass());
+            nativeCompass.restore();
             return;
         }
         if (top != InterfaceID.TOPLEVEL_PRE_EOC && top != InterfaceID.TOPLEVEL_OSRS_STRETCH)
         {
             restore();
-            nativeCompass.update(config.showCompass());
+            nativeCompass.restore();
             return;
         }
         if (faulted)
         {
-            nativeCompass.update(config.showCompass());
+            nativeCompass.restore();
             return;
         }
         classicGroupRefreshFrames = 0;
@@ -432,14 +578,14 @@ final class SquareHudController
         try
         {
             apply(top == InterfaceID.TOPLEVEL_PRE_EOC ? MODERN : CLASSIC_RESIZABLE);
-            if (snapshot == null) { nativeCompass.update(config.showCompass()); }
+            if (snapshot == null) { nativeCompass.restore(); }
         }
         catch (RuntimeException ex)
         {
             // Fail back to the game's interface instead of leaving a half-applied HUD.
             faulted = true;
             restore();
-            nativeCompass.update(config.showCompass());
+            nativeCompass.restore();
             LOG.warn("Square HUD was restored after an interface error. Turn Enable square minimap off and on to retry.", ex);
         }
     }
@@ -475,9 +621,13 @@ final class SquareHudController
             ? wilderness.getWidth() : 0;
         int wildernessHeight = wildernessWidth > 0 ? wilderness.getHeight() : 0;
         boolean wildernessVisible = wildernessWidth > 0 && indicatorHasContent(wilderness);
-        int footerHeight = SquareHudGeometry.footerHeightForControls(
+        if (!locationInitialized) { refreshLocation(); }
+        int baseFooterHeight = SquareHudGeometry.footerHeightForControls(
             footerControlHeight(InterfaceID.Orbs.XP_DROPS),
             footerControlHeight(InterfaceID.Orbs.ORB_WORLDMAP));
+        // The Info Panel always keeps the native footer height. Long readouts wrap
+        // inside the existing row instead of moving XP/Tool/Tracker/World Map controls.
+        int footerHeight = baseFooterHeight;
         List<UtilityPlacement> utilities = utilityPlacements(Math.max(
             SquareHudGeometry.FOOTER_SLOT_WIDTH,
             wildernessWidth + SquareHudGeometry.BORDER + SquareHudGeometry.GAP), footerHeight);
@@ -501,6 +651,14 @@ final class SquareHudController
         }
         totalHeight = Math.max(totalHeight, indicatorBottom);
         Widget parent = block.getParent();
+        boolean expanded = infoPanel != null && config.enableToolsButton() && infoPanel.drawer().state().expanded;
+        drawerHasRoom = parent.getHeight() >= totalHeight + InfoPanelToolDrawer.HEIGHT;
+        drawerSpace = expanded && drawerHasRoom ? InfoPanelToolDrawer.HEIGHT : 0;
+        if (drawerSpace > 0)
+        {
+            totalHeight += drawerSpace;
+            for (UtilityPlacement utility : utilities) { utility.bounds.translate(0, drawerSpace); }
+        }
         if (parent.getWidth() < SquareHudGeometry.WIDTH || parent.getHeight() < totalHeight)
         {
             restore();
@@ -573,9 +731,13 @@ final class SquareHudController
         footprint.height = totalHeight;
         boolean coveredByWorldMap = worldMapOverlaps(footprint);
         net.runelite.api.Point mouse = client.getMouseCanvasPosition();
-        boolean hovered = mouse != null && geometry.footerReveal().contains(mouse.getX(), mouse.getY());
+        Rectangle reveal = geometry.footerReveal();
+        reveal.height += drawerSpace;
+        boolean hovered = mouse != null && reveal.contains(mouse.getX(), mouse.getY());
+        boolean holding = infoPanel != null && (infoPanel.isVolumeDragging() || infoPanel.drawer().isHolding());
+        boolean popupPin = infoPanel != null && !expanded && infoPanel.isPopupOpen();
         boolean footerVisible = footerVisibility.update(config.squareHudFooterMode(), hovered,
-            client.isMenuOpen(), coveredByWorldMap, clock.getAsLong());
+            client.isMenuOpen() || holding || popupPin, coveredByWorldMap, clock.getAsLong());
         if (footerVisible)
         {
             footerHiddenEdits.restore();
@@ -628,6 +790,7 @@ final class SquareHudController
         if (wildernessWidth > 0)
         {
             Rectangle target = geometry.wilderness(wildernessWidth, wildernessHeight);
+            target.translate(0, drawerSpace);
             placeOnCanvas(wilderness, target);
             if (wildernessVisible) { wildernessBounds = target; }
             if (coveredByWorldMap) { worldMapEdits.set(wilderness, HIDDEN, 1); }
@@ -650,6 +813,7 @@ final class SquareHudController
         Widget globe = client.getWidget(InterfaceID.Orbs.WORLDMAP);
         Rectangle globeBounds = globe == null ? null : globe.getBounds();
         Rectangle target = geometry.multiCombat(globeBounds, widget.getWidth(), widget.getHeight(), wildernessBounds);
+        if (wildernessBounds == null) { target.translate(0, drawerSpace); }
         placeOnCanvas(widget, target);
         // The game still decides when this indicator is visible. Footer hover
         // changes neither that state nor its position outside the frame.
@@ -747,19 +911,28 @@ final class SquareHudController
             && height > 0 && height <= 80 ? height : 0;
     }
 
-    private void placeFooterControl(int id, SquareHudGeometry geometry, boolean right,
-        boolean visible, List<Rectangle> buttons)
+    /** Shared prediction/placement keeps orb clearance independent of last frame's coordinates. */
+    private Rectangle footerTarget(int id, SquareHudGeometry geometry, boolean right)
     {
         Widget widget = client.getWidget(id);
-        if (widget == null || widget.isHidden()) { return; }
+        if (widget == null || widget.isHidden()) { return null; }
         int width = widget.getWidth();
         int height = widget.getHeight();
         Rectangle footer = geometry.footer();
+        int rowHeight = footer.height;
         if (width <= 0 || width > SquareHudGeometry.FOOTER_SLOT_WIDTH || height <= 0
-            || height > footer.height - SquareHudGeometry.FOOTER_PADDING * 2) { return; }
+            || height > rowHeight - SquareHudGeometry.FOOTER_PADDING * 2) { return null; }
         int x = right ? footer.x + footer.width - SquareHudGeometry.BORDER - width
             : footer.x + SquareHudGeometry.BORDER + 3;
-        Rectangle target = new Rectangle(x, footer.y + (footer.height - height) / 2, width, height);
+        return new Rectangle(x, footer.y + (rowHeight - height) / 2, width, height);
+    }
+
+    private void placeFooterControl(int id, SquareHudGeometry geometry, boolean right,
+        boolean visible, List<Rectangle> buttons)
+    {
+        Rectangle target = footerTarget(id, geometry, right);
+        if (target == null) { return; }
+        Widget widget = client.getWidget(id);
         placeOnCanvas(widget, target);
         buttons.add(new Rectangle(target));
         visitFooter(widget, Collections.newSetFromMap(new IdentityHashMap<>()), 0, !visible);
@@ -979,21 +1152,52 @@ final class SquareHudController
             : client.getVarpValue(VarPlayerID.DISEASE) > 0 ? 3 : 0;
         SquareHudInfoText.Content content = currentInfoText();
         boolean showCompass = config.showCompass();
+        InfoPanelToolDrawer.View drawerView = null;
+        if (infoPanel != null)
+        {
+            boolean toolsEnabled = config.enableToolsButton();
+            InfoPanelToolDrawer.State state = toolsEnabled ? infoPanel.drawer().state()
+                : new InfoPanelToolDrawer.State(false, null, infoPanel.drawer().state().generation);
+            int textWidth = 0, lineHeight = 16;
+            if (config.infoPanelText() != InfoPanelText.VOLUME && client.getCanvas() != null)
+            {
+                java.awt.FontMetrics metrics = client.getCanvas().getFontMetrics(FontManager.getRunescapeSmallFont());
+                textWidth = metrics.stringWidth(content.text) + 4;
+                lineHeight = metrics.getHeight();
+            }
+            boolean room = drawerHasRoom && geometry.footer().getMaxY() + InfoPanelToolDrawer.HEIGHT <= client.getCanvasHeight();
+            InfoPanelToolDrawer.Layout layout = new InfoPanelToolDrawer.Layout(geometry.footer(),
+                geometry.zoneText(footerButtons), state.expanded, room, textWidth, lineHeight, toolsEnabled,
+                config.enableTrackingButton());
+            drawerView = new InfoPanelToolDrawer.View(state, layout, paint && footerVisible,
+                infoPanel.quickControls(state.selected, layout.content));
+            if (drawerIcons != null && paint && footerVisible && toolsEnabled) { drawerIcons.prepare(state.expanded); }
+        }
         return new Snapshot(geometry, values, maxima, icons, available, selected, health,
             stamina, soulreaper,
             showCompass ? northAngle() : 0, paint, paint && showCompass && !client.isMenuOpen(), footerVisible,
-            content.text, content.tooltip, footerButtons, showCompass);
+            content.text, config.infoPanelText() == InfoPanelText.VOLUME ? "" : "Click to change info", footerButtons, showCompass,
+            content.compactText, config.infoPanelText(), drawerView);
     }
 
     private SquareHudInfoText.Content currentInfoText()
     {
         InfoPanelText mode = config.infoPanelText();
+        if (mode == InfoPanelText.NOTHING) { return SquareHudInfoText.Content.EMPTY; }
         if (mode == InfoPanelText.SYSTEM_TIME) { return infoText.systemTime(); }
-        if (mode == InfoPanelText.COORDS)
+        if (mode == InfoPanelText.DAY_DATE) { return infoText.dayDate(); }
+        if (mode == InfoPanelText.SERVER_TIME) { return infoText.serverTime(); }
+        if (mode == InfoPanelText.COORDS || mode == InfoPanelText.COORDS_AND_PLANE)
         {
             WorldPoint point = currentLocation;
-            return point == null ? SquareHudInfoText.Content.EMPTY
+            if (point == null) { return SquareHudInfoText.Content.EMPTY; }
+            return mode == InfoPanelText.COORDS_AND_PLANE
+                ? SquareHudInfoText.coordinatesWithPlane(point.getX(), point.getY(), point.getPlane())
                 : SquareHudInfoText.coordinates(point.getX(), point.getY(), point.getPlane());
+        }
+        if (mode != null && mode != InfoPanelText.ZONE && infoPanel != null)
+        {
+            return infoPanel.content(mode);
         }
         return SquareHudInfoText.zone(zoneName);
     }
@@ -1154,6 +1358,8 @@ final class SquareHudController
     {
         boolean leavingSquare = activeBlock != null;
         snapshot = null;
+        if (infoPanel != null)
+        { infoPanel.volumeBar().suspend(); infoPanel.drawerVolumeBar().suspend(); infoPanel.drawer().suspend(); }
         footerVisibility.reset();
         footerHiddenEdits.restore();
         footerWidgetIds.clear();

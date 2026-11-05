@@ -39,12 +39,16 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 public class EntityMarkerOverlay extends Overlay
 {
     private static final BufferedImage SWORD_ICON = createSwordIcon();
+    private static final BufferedImage SMALL_SWORD_B_ICON = createSmallSwordBIcon();
+    private static final BufferedImage SMALL_SWORD_C_ICON = createSmallSwordCIcon();
 
     private final Client client;
     private final MinimapFilterConfig config;
     private final MinimapMarkerAssets assets;
     private final SquareHudController hud;
     private final LootingBagMarkers lootingBags;
+    @Inject
+    private TrackingVisibility trackingVisibility;
 
     @Inject
     public EntityMarkerOverlay(Client client, MinimapFilterConfig config, MinimapMarkerAssets assets, SquareHudController hud, LootingBagMarkers lootingBags)
@@ -66,6 +70,9 @@ public class EntityMarkerOverlay extends Overlay
         {
             return null;
         }
+        boolean entities = trackingVisibility == null || trackingVisibility.entities();
+        boolean groundItems = trackingVisibility == null || trackingVisibility.groundItems();
+        if (!entities && !groundItems) { return null; }
 
         if (hud.isActive())
         {
@@ -77,8 +84,8 @@ public class EntityMarkerOverlay extends Overlay
             try
             {
                 clipped.clip(hud.markerClip());
-                renderNpcMarkers(clipped);
-                renderGroundItemMarkers(clipped);
+                if (entities) { renderNpcMarkers(clipped); }
+                if (groundItems) { renderGroundItemMarkers(clipped); }
             }
             finally
             {
@@ -87,8 +94,8 @@ public class EntityMarkerOverlay extends Overlay
         }
         else
         {
-            renderNpcMarkers(graphics);
-            renderGroundItemMarkers(graphics);
+            if (entities) { renderNpcMarkers(graphics); }
+            if (groundItems) { renderGroundItemMarkers(graphics); }
         }
         return null;
     }
@@ -138,6 +145,14 @@ public class EntityMarkerOverlay extends Overlay
                 if (style == AttackableNpcMarkerStyle.SWORD)
                 {
                     drawCentered(graphics, SWORD_ICON, location);
+                }
+                else if (style == AttackableNpcMarkerStyle.SMALL_SWORD_B)
+                {
+                    drawCentered(graphics, SMALL_SWORD_B_ICON, location);
+                }
+                else if (style == AttackableNpcMarkerStyle.SMALL_SWORD_C)
+                {
+                    drawCentered(graphics, SMALL_SWORD_C_ICON, location);
                 }
                 else if (style == AttackableNpcMarkerStyle.NATIVE_DOT && attackableNpcDot != null)
                 {
@@ -330,5 +345,81 @@ public class EntityMarkerOverlay extends Overlay
         return image;
     }
 
+    private static BufferedImage createSmallSwordBIcon()
+    {
+        try (InputStream in = EntityMarkerOverlay.class.getResourceAsStream("sword_small_b.png"))
+        {
+            if (in != null)
+            {
+                BufferedImage image = ImageIO.read(in);
+                if (image != null) { return image; }
+            }
+        }
+        catch (IOException ignored)
+        {
+            // Fall through to the purpose-built 9x9 fallback below.
+        }
+
+        BufferedImage image = new BufferedImage(9, 9, BufferedImage.TYPE_INT_ARGB);
+        int outline = new Color(18, 16, 14, 255).getRGB();
+        int steel = new Color(218, 226, 232, 255).getRGB();
+        int light = new Color(255, 255, 255, 255).getRGB();
+        int gold = new Color(235, 170, 28, 255).getRGB();
+        int goldLight = new Color(255, 216, 66, 255).getRGB();
+        int grip = new Color(118, 69, 39, 255).getRGB();
+        int[][] pixels = {
+            {8,0,outline},{7,0,outline},
+            {8,1,outline},{7,1,light},{6,1,outline},
+            {7,2,outline},{6,2,steel},{5,2,outline},
+            {6,3,outline},{5,3,light},{4,3,outline},
+            {5,4,outline},{4,4,steel},{3,4,outline},
+            {2,5,outline},{3,5,gold},{4,5,outline},{5,5,gold},{6,5,outline},
+            {3,6,outline},{4,6,grip},{5,6,outline},
+            {2,7,outline},{3,7,grip},{4,7,outline},
+            {1,8,outline},{2,8,goldLight},{3,8,outline}
+        };
+        for (int[] pixel : pixels) { image.setRGB(pixel[0], pixel[1], pixel[2]); }
+        return image;
+    }
+
+    private static BufferedImage createSmallSwordCIcon()
+    {
+        try (InputStream in = EntityMarkerOverlay.class.getResourceAsStream("sword_small_c.png"))
+        {
+            if (in != null)
+            {
+                BufferedImage image = ImageIO.read(in);
+                if (image != null) { return image; }
+            }
+        }
+        catch (IOException ignored)
+        {
+            // Fall through to the purpose-built 11x11 fallback below.
+        }
+
+        BufferedImage image = new BufferedImage(11, 11, BufferedImage.TYPE_INT_ARGB);
+        int outline = new Color(18, 16, 14, 255).getRGB();
+        int steel = new Color(218, 226, 232, 255).getRGB();
+        int light = new Color(255, 255, 255, 255).getRGB();
+        int steelDark = new Color(124, 136, 146, 255).getRGB();
+        int gold = new Color(235, 170, 28, 255).getRGB();
+        int goldLight = new Color(255, 216, 66, 255).getRGB();
+        int grip = new Color(118, 69, 39, 255).getRGB();
+        int[][] pixels = {
+            {9,0,outline},{10,0,outline},
+            {8,1,outline},{9,1,light},{10,1,outline},
+            {7,2,outline},{8,2,steel},{9,2,light},{10,2,outline},
+            {6,3,outline},{7,3,steel},{8,3,light},{9,3,outline},
+            {5,4,outline},{6,4,steel},{7,4,light},{8,4,outline},
+            {4,5,outline},{5,5,steel},{6,5,steelDark},{7,5,outline},
+            {2,6,outline},{3,6,gold},{4,6,goldLight},{5,6,outline},{6,6,goldLight},{7,6,gold},{8,6,outline},
+            {4,7,outline},{5,7,grip},{6,7,outline},
+            {3,8,outline},{4,8,grip},{5,8,grip},{6,8,outline},
+            {2,9,outline},{3,9,grip},{4,9,outline},
+            {1,10,outline},{2,10,gold},{3,10,goldLight},{4,10,outline}
+        };
+        for (int[] pixel : pixels) { image.setRGB(pixel[0], pixel[1], pixel[2]); }
+        return image;
+    }
 
 }

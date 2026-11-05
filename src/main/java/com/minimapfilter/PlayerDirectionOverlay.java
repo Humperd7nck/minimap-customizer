@@ -47,6 +47,8 @@ public class PlayerDirectionOverlay extends Overlay
     private final Client client;
     private final MinimapFilterConfig config;
     private final SquareHudController hud;
+    @Inject
+    private TrackingVisibility trackingVisibility;
 
     @Inject
     public PlayerDirectionOverlay(Client client, MinimapFilterConfig config, SquareHudController hud)
@@ -62,7 +64,8 @@ public class PlayerDirectionOverlay extends Overlay
     @Override
     public Dimension render(Graphics2D graphics)
     {
-        if (config.playerMarkerStyle() != PlayerMarkerStyle.DIRECTION_ARROW
+        if ((trackingVisibility != null && !trackingVisibility.entities())
+            || config.playerMarkerStyle() != PlayerMarkerStyle.DIRECTION_ARROW
             || client.getGameState() != GameState.LOGGED_IN)
         {
             return null;

@@ -32,6 +32,7 @@ final class MinimapLayoutControls
     private static final Color DISABLED = new Color(128, 128, 128);
     private final MinimapFilterConfig config;
     private final LootingBagColorControls lootingBagControls;
+    private final InfoPanelSettingLayout infoPanelLayout = new InfoPanelSettingLayout();
     private final Map<JComponent, SavedState> changed = new IdentityHashMap<>();
     private Timer timer;
     private boolean running;
@@ -83,10 +84,10 @@ final class MinimapLayoutControls
                 {
                     roots.add(window);
                     if (!config.enableSquareMinimap()) { collect(window, disabled, 0); }
-                    if (!config.showPlayers()) { collectWildernessRow(window, disabled, 0); }
                 }
             }
             apply(disabled);
+            infoPanelLayout.update(roots);
             lootingBagControls.update(roots, config.groundItemMarkerStyle() == GroundItemMarkerStyle.LOOTING_BAG);
         }
         catch (RuntimeException ex)
@@ -106,8 +107,8 @@ final class MinimapLayoutControls
         requireEdt();
         Set<JComponent> disabled = Collections.newSetFromMap(new IdentityHashMap<>());
         if (!squareEnabled && root != null) { collect(root, disabled, 0); }
-        if (!config.showPlayers() && root != null) { collectWildernessRow(root, disabled, 0); }
         apply(disabled);
+        infoPanelLayout.update(root == null ? Collections.emptyList() : Collections.singletonList(root));
         lootingBagControls.update(root == null ? Collections.emptyList() : Collections.singletonList(root),
             config.groundItemMarkerStyle() == GroundItemMarkerStyle.LOOTING_BAG);
     }
@@ -115,12 +116,28 @@ final class MinimapLayoutControls
     private void collect(Component component, Set<JComponent> disabled, int depth)
     {
         if (component == null || depth > 40) { return; }
+        if (component instanceof JLabel)
+        {
+            JLabel label = (JLabel) component;
+            String text = label.getText();
+            if (("Tools button".equals(text) || "Tracking button".equals(text) || "Show compass".equals(text))
+                && label.getParent() != null)
+            {
+                disabled.add(label);
+                for (Component sibling : label.getParent().getComponents())
+                {
+                    if (sibling instanceof JCheckBox) { disabled.add((JCheckBox) sibling); }
+                }
+                return;
+            }
+        }
         if (component instanceof JComboBox<?>)
         {
             JComboBox<?> box = (JComboBox<?>) component;
             Object value = box.getItemCount() == 0 ? null : box.getItemAt(0);
+            boolean infoPanel = InfoPanelDropdown.isInfoPanelBox(box);
             String label = value instanceof SquareHudFooterMode ? "Info panel view"
-                : value instanceof InfoPanelText ? "Info panel text" : null;
+                : infoPanel ? "Info panel text" : null;
             if (label != null)
             {
                 disabled.add(box);
@@ -129,7 +146,8 @@ final class MinimapLayoutControls
                 {
                     for (Component sibling : row.getComponents())
                     {
-                        if (sibling instanceof JLabel && label.equals(((JLabel) sibling).getText()))
+                        if (sibling instanceof JLabel && (label.equals(((JLabel) sibling).getText())
+                            || (infoPanel && (label + ":").equals(((JLabel) sibling).getText()))))
                         {
                             disabled.add((JLabel) sibling);
                         }
@@ -144,35 +162,6 @@ final class MinimapLayoutControls
             for (Component child : ((Container) component).getComponents())
             {
                 collect(child, disabled, depth + 1);
-            }
-        }
-    }
-
-    private void collectWildernessRow(Component component, Set<JComponent> disabled, int depth)
-    {
-        if (component == null || depth > 40) { return; }
-        if (component instanceof JLabel)
-        {
-            JLabel label = (JLabel) component;
-            if ("Wilderness player skulls".equals(label.getText()) && label.getParent() != null
-                && label.getToolTipText() != null
-                && label.getToolTipText().contains("Requires Other players"))
-            {
-                for (Component sibling : label.getParent().getComponents())
-                {
-                    if (sibling instanceof JCheckBox)
-                    {
-                        disabled.add(label);
-                        disabled.add((JCheckBox) sibling);
-                    }
-                }
-            }
-        }
-        if (component instanceof Container && !(component instanceof JComboBox<?>))
-        {
-            for (Component child : ((Container) component).getComponents())
-            {
-                collectWildernessRow(child, disabled, depth + 1);
             }
         }
     }
@@ -205,6 +194,7 @@ final class MinimapLayoutControls
         requireEdt();
         for (JComponent component : new ArrayList<>(changed.keySet())) { restore(component); }
         lootingBagControls.restoreAll();
+        infoPanelLayout.restoreAll();
     }
 
     private void restore(JComponent component)

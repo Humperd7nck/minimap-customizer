@@ -13,6 +13,7 @@ import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.Map;
 import javax.swing.JComboBox;
+import javax.swing.JCheckBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
@@ -55,10 +56,19 @@ public final class SquareHudInfoPanelChecks
         check("Zone text default", config.infoPanelText() == InfoPanelText.ZONE);
         check("Always label", SquareHudFooterMode.ALWAYS_VISIBLE.toString().equals("Always"));
         check("Mouseover label", SquareHudFooterMode.MOUSEOVER_ONLY.toString().equals("Mouseover only"));
-        check("exactly three content choices", InfoPanelText.values().length == 3);
-        check("System Time label", InfoPanelText.SYSTEM_TIME.toString().equals("System Time"));
+        check("twenty-three content choices", InfoPanelText.values().length == 23);
+        check("original Zone enum key retained", InfoPanelText.valueOf("ZONE") == InfoPanelText.ZONE);
+        check("original System Time enum key retained", InfoPanelText.valueOf("SYSTEM_TIME") == InfoPanelText.SYSTEM_TIME);
+        check("original Coords enum key retained", InfoPanelText.valueOf("COORDS") == InfoPanelText.COORDS);
+        check("Local Time label, original key", InfoPanelText.SYSTEM_TIME.toString().equals("Local Time"));
         check("Coords label", InfoPanelText.COORDS.toString().equals("Coords"));
-        String[] names = {"Show compass", "Enable square minimap", "Info panel view", "Info panel text"};
+        check("Coords + Plane label", InfoPanelText.COORDS_AND_PLANE.toString().equals("Coords + Plane"));
+        check("Nothing retained without shifting existing enum values", InfoPanelText.values()[21] == InfoPanelText.NOTHING
+            && InfoPanelText.NOTHING.toString().equals("-Nothing-"));
+        check("Day + Date appended without shifting prior values", InfoPanelText.values()[22] == InfoPanelText.DAY_DATE
+            && InfoPanelText.DAY_DATE.toString().equals("Day + Date"));
+        String[] names = {"Enable square minimap", "Info panel view", "Info panel text", "Tools button",
+            "Tracking button", "Show compass"};
         int count = 0;
         for (Method method : MinimapFilterConfig.class.getDeclaredMethods())
         {
@@ -73,7 +83,7 @@ public final class SquareHudInfoPanelChecks
                 check("layout row visible " + method.getName(), !item.hidden());
             }
         }
-        check("exactly four Layout rows", count == 4);
+        check("exactly six Layout rows", count == 6);
         ConfigSection layout = MinimapFilterConfig.class.getField("LAYOUT").getAnnotation(ConfigSection.class);
         check("Layout renamed", layout.name().equals("Layout"));
         check("Layout starts expanded", !layout.closedByDefault());
@@ -87,6 +97,21 @@ public final class SquareHudInfoPanelChecks
         }
         ConfigItem view = MinimapFilterConfig.class.getMethod("squareHudFooterMode").getAnnotation(ConfigItem.class);
         check("view storage key preserved", view.keyName().equals("squareHudFooterMode"));
+        ConfigItem tools = MinimapFilterConfig.class.getMethod("enableToolsButton").getAnnotation(ConfigItem.class);
+        check("Tools button defaults on", config.enableToolsButton());
+        check("Tools row renamed", tools.name().equals("Tools button"));
+        check("Tools tooltip wording", tools.description().equals("Enable Tools button on Info panel"));
+        ConfigItem tracking = MinimapFilterConfig.class.getMethod("enableTrackingButton").getAnnotation(ConfigItem.class);
+        check("Tracking button defaults on", config.enableTrackingButton());
+        check("Tracking row named", tracking.name().equals("Tracking button"));
+        check("Tracking follows Tools", tracking.position() == tools.position() + 1);
+        ConfigItem compass = MinimapFilterConfig.class.getMethod("showCompass").getAnnotation(ConfigItem.class);
+        check("Show compass follows Tracking", compass.position() == tracking.position() + 1);
+        check("Show compass describes square-only scope", compass.description().contains("Square minimap")
+            && compass.description().contains("Classic"));
+        ConfigSection alerts = MinimapFilterConfig.class.getField("TOOL_ALERTS").getAnnotation(ConfigSection.class);
+        check("alert section renamed", alerts.name().equals("Alarm/timer alerts"));
+        check("alert section directly follows Layout", alerts.position() == layout.position() + 1);
     }
 
     private void clock()
@@ -110,6 +135,14 @@ public final class SquareHudInfoPanelChecks
         check("midnight", info.systemTime().text.equals("12:00 AM"));
         zone[0] = ZoneOffset.ofHoursMinutes(5, 30);
         check("fractional timezone", info.systemTime().text.equals("5:30 AM"));
+        zone[0] = ZoneId.of("America/Chicago");
+        time.instant = Instant.parse("2026-10-30T17:00:00Z");
+        SquareHudInfoText.Content date = info.dayDate();
+        check("day and date requested format", date.text.equals("Fri · Oct 30"));
+        check("day and date uses local zone", date.tooltip.contains("America/Chicago"));
+        check("same local day uses cached date", info.dayDate() == date);
+        time.instant = Instant.parse("2026-10-31T05:00:00Z");
+        check("local day boundary refreshes date", info.dayDate().text.equals("Sat · Oct 31"));
         zone[0] = ZoneId.of("America/New_York");
         time.instant = Instant.parse("2026-11-01T05:59:59Z");
         check("before daylight fallback", info.systemTime().text.equals("1:59 AM"));
@@ -128,6 +161,8 @@ public final class SquareHudInfoPanelChecks
             SquareHudInfoText.Content c = SquareHudInfoText.coordinates(12345, 6789, plane);
             check("plane does not crowd display " + plane, c.text.equals("12345, 6789"));
             check("plane reported " + plane, c.tooltip.endsWith(Integer.toString(plane)));
+            SquareHudInfoText.Content combined = SquareHudInfoText.coordinatesWithPlane(12345, 6789, plane);
+            check("plane explicitly included in combined option " + plane, combined.text.equals("12345, 6789 | P: " + plane));
         }
         check("zero valid", SquareHudInfoText.coordinates(0, 0, 0).text.equals("0, 0"));
         check("unknown coordinates blank", SquareHudInfoText.coordinates(-1, 3, 0).text.isEmpty());
@@ -186,6 +221,30 @@ public final class SquareHudInfoPanelChecks
         JComboBox<InfoPanelText> text = new JComboBox<>(InfoPanelText.values());
         text.setSelectedItem(InfoPanelText.COORDS);
         JLabel textLabel = row(root, "Info panel text", text);
+        JPanel toolsRow = new JPanel(new BorderLayout());
+        JLabel toolsLabel = new JLabel("Tools button");
+        toolsLabel.setForeground(Color.WHITE);
+        JCheckBox toolsToggle = new JCheckBox();
+        toolsToggle.setSelected(true);
+        toolsRow.add(toolsLabel, BorderLayout.CENTER);
+        toolsRow.add(toolsToggle, BorderLayout.EAST);
+        root.add(toolsRow);
+        JPanel trackingRow = new JPanel(new BorderLayout());
+        JLabel trackingLabel = new JLabel("Tracking button");
+        trackingLabel.setForeground(Color.WHITE);
+        JCheckBox trackingToggle = new JCheckBox();
+        trackingToggle.setSelected(true);
+        trackingRow.add(trackingLabel, BorderLayout.CENTER);
+        trackingRow.add(trackingToggle, BorderLayout.EAST);
+        root.add(trackingRow);
+        JPanel compassRow = new JPanel(new BorderLayout());
+        JLabel compassLabel = new JLabel("Show compass");
+        compassLabel.setForeground(Color.WHITE);
+        JCheckBox compassToggle = new JCheckBox();
+        compassToggle.setSelected(true);
+        compassRow.add(compassLabel, BorderLayout.CENTER);
+        compassRow.add(compassToggle, BorderLayout.EAST);
+        root.add(compassRow);
         JComboBox<String> unrelated = new JComboBox<>(new String[]{"Zone", "System Time", "Coords"});
         row(root, "Other plugin", unrelated);
         int[] resetClicks = {0};
@@ -196,8 +255,16 @@ public final class SquareHudInfoPanelChecks
         textLabel.addMouseListener(reset);
         Color original = textLabel.getForeground();
         controls.updateTree(root, false);
-        check("both dropdowns disabled", !view.isEnabled() && !text.isEnabled());
-        check("both labels disabled", !viewLabel.isEnabled() && !textLabel.isEnabled());
+        check("Info controls disabled", !view.isEnabled() && !text.isEnabled() && !toolsToggle.isEnabled()
+            && !trackingToggle.isEnabled() && !compassToggle.isEnabled());
+        check("Info panel selector label stacked with colon", textLabel.getText().equals("Info panel text:"));
+        JPanel textRow = (JPanel) text.getParent();
+        textRow.setSize(203, textRow.getPreferredSize().height);
+        textRow.doLayout();
+        check("selector below label", text.getY() > textLabel.getY() + textLabel.getHeight());
+        check("selector uses whole row width", text.getWidth() == 203);
+        check("labels disabled", !viewLabel.isEnabled() && !textLabel.isEnabled() && !toolsLabel.isEnabled()
+            && !trackingLabel.isEnabled() && !compassLabel.isEnabled());
         check("label grayed", textLabel.getForeground().equals(new Color(128, 128, 128)));
         check("similar unrelated choices untouched", unrelated.isEnabled());
         check("selection retained while disabled", view.getSelectedItem() == SquareHudFooterMode.MOUSEOVER_ONLY
@@ -208,8 +275,10 @@ public final class SquareHudInfoPanelChecks
         }
         check("disabled label cannot reset value", resetClicks[0] == 0);
         for (int i = 0; i < 30; i++) { controls.updateTree(root, false); }
+        check("stacked label remains disabled across repeated refreshes", !textLabel.isEnabled());
         controls.updateTree(root, true);
-        check("both dropdowns re-enabled", view.isEnabled() && text.isEnabled());
+        check("Info controls re-enabled", view.isEnabled() && text.isEnabled() && toolsToggle.isEnabled()
+            && trackingToggle.isEnabled() && compassToggle.isEnabled());
         check("labels and colors restored", textLabel.isEnabled() && textLabel.getForeground().equals(original));
         check("no changes to saved selection", text.getSelectedItem() == InfoPanelText.COORDS);
         int listenerCount = 0;
@@ -220,7 +289,10 @@ public final class SquareHudInfoPanelChecks
         check("closed/rebuilt panel releases old controls", view.isEnabled() && text.isEnabled());
         controls.updateTree(root, false);
         controls.restoreAll();
-        check("stop restores controls", view.isEnabled() && text.isEnabled());
+        check("stop restores controls", view.isEnabled() && text.isEnabled() && toolsToggle.isEnabled()
+            && trackingToggle.isEnabled() && compassToggle.isEnabled());
+        check("stop restores original row label", textLabel.getText().equals("Info panel text"));
+        check("stop restores original row constraints", ((BorderLayout) textRow.getLayout()).getLayoutComponent(BorderLayout.EAST) == text);
         text.setEnabled(false);
         controls.updateTree(root, false);
         controls.restoreAll();

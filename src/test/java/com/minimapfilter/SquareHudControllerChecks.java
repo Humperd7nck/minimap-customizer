@@ -75,7 +75,116 @@ public final class SquareHudControllerChecks
         checks.infoPanelAndCompass(true);
         checks.infoPanelAndCompass(false);
         checks.fixedCompass();
+        checks.toolDrawerBehavior(true);
+        checks.toolDrawerBehavior(false);
         return checks.cases;
+    }
+
+    /** The real HUD layout uses shared hover bounds and reserves native-indicator clearance. */
+    private void toolDrawerBehavior(boolean modern) throws Exception
+    {
+        Fixture f = new Fixture(modern);
+        String label = (modern ? "modern" : "classic") + " tool drawer ";
+        MinimapFilterConfig config = new MinimapFilterConfig()
+        {
+            @Override public boolean enableSquareMinimap() { return f.appearance == MinimapAppearance.SQUARE_HUD; }
+            @Override public InfoPanelText infoPanelText() { return f.infoMode; }
+            @Override public SquareHudFooterMode squareHudFooterMode() { return f.footerMode; }
+            @Override public boolean enableTrackingButton() { return f.trackingButton; }
+        };
+        InfoPanelService service = new InfoPanelService(f.client, config, null, null, null);
+        Field runningField = InfoPanelService.class.getDeclaredField("running");
+        runningField.setAccessible(true); runningField.setBoolean(service, true);
+        Field infoField = SquareHudController.class.getDeclaredField("infoPanel");
+        infoField.setAccessible(true); infoField.set(f.hud, service);
+        TestWidget xp = f.add(InterfaceID.Orbs.XP_DROPS, f.orbs, 34, 30);
+        TestWidget world = f.add(InterfaceID.Orbs.ORB_WORLDMAP, f.orbs, 34, 30);
+        TestWidget pvpRoot = f.add(InterfaceID.PvpIcons.UNIVERSE, f.root, 1000, 700);
+        TestWidget wild = f.add(InterfaceID.PvpIcons.ICONS, pvpRoot, 78, 73);
+        TestWidget skull = f.add(InterfaceID.PvpIcons.PVP, wild, 24, 24);
+        skull.widget.setSpriteId(123); f.wildernessActive = true;
+        int multiId = modern ? InterfaceID.ToplevelPreEoc.MULTIWAY_ICON : InterfaceID.ToplevelOsrsStretch.MULTIWAY_ICON;
+        TestWidget multi = f.add(multiId, f.block, 16, 16);
+        f.hud.update();
+        SquareHudController.Snapshot initial = f.hud.snapshot();
+        check(label + "collapsed hammer exists", initial.drawer != null && !initial.drawer.layout.hammer.isEmpty());
+        check(label + "Tracking eye defaults visible", !initial.drawer.layout.eye.isEmpty());
+        int withEyeWidth = initial.infoBounds.width;
+        f.trackingButton = false; f.hud.update();
+        check(label + "Tracking toggle removes eye", f.hud.snapshot().drawer.layout.eye.isEmpty());
+        check(label + "Tracking toggle returns its width to Info text", f.hud.snapshot().infoBounds.width > withEyeWidth);
+        check(label + "Tools remains when Tracking hidden", !f.hud.snapshot().drawer.layout.hammer.isEmpty());
+        f.trackingButton = true; f.hud.update(); initial = f.hud.snapshot();
+        Rectangle xpBounds = xp.widget.getBounds(), worldBounds = world.widget.getBounds();
+        Rectangle mapBounds = f.hud.mapBounds();
+        int wildY = wild.widget.getBounds().y, multiY = multi.widget.getBounds().y;
+        drawerTap(service.drawer(), initial.drawer, initial.drawer.layout.hammer);
+        f.hud.update();
+        SquareHudController.Snapshot open = f.hud.snapshot();
+        check(label + "attached below footer", open.drawer.layout.panel.y == open.geometry.footer().y + open.geometry.footer().height);
+        check(label + "full-width", open.drawer.layout.panel.width == open.geometry.footer().width);
+        check(label + "XP/World Map unmoved", xpBounds.equals(xp.widget.getBounds()) && worldBounds.equals(world.widget.getBounds()));
+        check(label + "minimap unmoved", mapBounds.equals(f.hud.mapBounds()));
+        check(label + "wilderness below drawer", wild.widget.getBounds().y == wildY + InfoPanelToolDrawer.HEIGHT);
+        check(label + "multi below wilderness", multi.widget.getBounds().y == multiY + InfoPanelToolDrawer.HEIGHT);
+        check(label + "drawer inside parent", f.block.widget.getBounds().contains(open.drawer.layout.panel));
+        check(label + "indicators inside parent", f.block.widget.getBounds().contains(multi.widget.getBounds()));
+        drawerTap(service.drawer(), open.drawer, open.drawer.layout.icons[0]);
+        f.hud.update();
+        check(label + "main selection unchanged", f.hud.snapshot().infoMode == InfoPanelText.ZONE);
+        check(label + "selected timer", f.hud.snapshot().drawer.state.selected == InfoPanelText.TIMER);
+        f.footerMode = SquareHudFooterMode.MOUSEOVER_ONLY; f.mouse = new Point(-1, -1); f.now = 0;
+        f.hud.update();
+        check(label + "both initially hover-hidden", !f.hud.snapshot().footerVisible && !f.hud.snapshot().drawer.visible);
+        Rectangle area = f.hud.snapshot().drawer.layout.panel;
+        f.mouse = new Point(area.x + 10, area.y + 10); f.now = 10; f.hud.update();
+        f.now = 100; f.hud.update();
+        check(label + "lower area reveals both", f.hud.snapshot().footerVisible && f.hud.snapshot().drawer.visible);
+        f.mouse = new Point(area.x + 10, area.y); f.now = 200; f.hud.update();
+        check(label + "shared seam stays visible", f.hud.snapshot().footerVisible);
+        f.mouse = new Point(-1, -1); f.now = 250; f.hud.update(); f.now = 700; f.hud.update();
+        check(label + "both hide together", !f.hud.snapshot().footerVisible && !f.hud.snapshot().drawer.visible);
+        check(label + "hover-hide retains tool", f.hud.snapshot().drawer.state.selected == InfoPanelText.TIMER);
+        check(label + "hover-hide does not move native indicators", wild.widget.getBounds().y == wildY + InfoPanelToolDrawer.HEIGHT && multi.widget.getBounds().y == multiY + InfoPanelToolDrawer.HEIGHT);
+        Rectangle footer = f.hud.snapshot().geometry.footer();
+        f.mouse = new Point(footer.x + 10, footer.y + 10); f.now = 800; f.hud.update(); f.now = 900; f.hud.update();
+        check(label + "upper area reveals both", f.hud.snapshot().footerVisible && f.hud.snapshot().drawer.visible);
+        drawerTap(service.drawer(), f.hud.snapshot().drawer, f.hud.snapshot().drawer.layout.hammer);
+        f.hud.update();
+        check(label + "collapse removes lower bounds", f.hud.snapshot().drawer.layout.panel.isEmpty());
+        check(label + "collapse returns indicators", wild.widget.getBounds().y == wildY && multi.widget.getBounds().y == multiY);
+        f.mouse = new Point(area.x + 10, area.y + 10); f.now = 1000; f.hud.update(); f.now = 1500; f.hud.update();
+        check(label + "collapsed lower area cannot reveal", !f.hud.snapshot().footerVisible);
+        // A full-size round hammer must not consume a long label's original width.
+        f.footerMode = SquareHudFooterMode.ALWAYS_VISIBLE;
+        Field zone = SquareHudController.class.getDeclaredField("zoneName");
+        zone.setAccessible(true); zone.set(f.hud, "A deliberately long location label for layout checks");
+        f.hud.update();
+        SquareHudController.Snapshot tall = f.hud.snapshot();
+        check(label + "long readout has a full-size sphere", tall.drawer.layout.hammer.width == 28 && tall.drawer.layout.hammer.height == 28);
+        check(label + "long readout keeps original footer height", tall.geometry.footer().height == initial.geometry.footer().height);
+        check(label + "long readout uses two-line vertical space", tall.infoBounds.height == tall.geometry.footer().height - 2);
+        check(label + "text does not intersect hammer", !tall.infoBounds.intersects(tall.drawer.layout.hammer));
+        check(label + "text does not intersect eye", !tall.infoBounds.intersects(tall.drawer.layout.eye));
+        check(label + "hammer does not intersect native controls", !tall.drawer.layout.hammer.intersects(xp.widget.getBounds()) && !tall.drawer.layout.hammer.intersects(world.widget.getBounds()));
+        check(label + "eye does not intersect native controls", !tall.drawer.layout.eye.intersects(xp.widget.getBounds()) && !tall.drawer.layout.eye.intersects(world.widget.getBounds()));
+        check(label + "map stays unchanged with wrapped text", mapBounds.equals(f.hud.mapBounds()));
+        Rectangle fixedFooter = tall.geometry.footer();
+        for (int i = 0; i < 3; i++) { f.hud.update(); check(label + "height stays fixed " + i, fixedFooter.equals(f.hud.snapshot().geometry.footer())); }
+        zone.set(f.hud, ""); f.hud.update();
+        check(label + "short readout uses same footer height", f.hud.snapshot().geometry.footer().height == initial.geometry.footer().height);
+        check(label + "native controls restore original positions", xpBounds.equals(xp.widget.getBounds()) && worldBounds.equals(world.widget.getBounds()));
+        service.stop();
+    }
+
+    private static void drawerTap(InfoPanelToolDrawer drawer, InfoPanelToolDrawer.View view, Rectangle target)
+    {
+        drawer.publish(view, true);
+        java.awt.Canvas canvas = new java.awt.Canvas();
+        int x = target.x + target.width / 2, y = target.y + target.height / 2;
+        drawer.mousePressed(new java.awt.event.MouseEvent(canvas, java.awt.event.MouseEvent.MOUSE_PRESSED, 1L, 0, x, y, 1, false, 1));
+        drawer.mouseReleased(new java.awt.event.MouseEvent(canvas, java.awt.event.MouseEvent.MOUSE_RELEASED, 2L, 0, x, y, 1, false, 1));
+        drawer.mouseClicked(new java.awt.event.MouseEvent(canvas, java.awt.event.MouseEvent.MOUSE_CLICKED, 3L, 0, x, y, 1, false, 1));
     }
 
     private void check(String name, boolean result)
@@ -466,6 +575,15 @@ public final class SquareHudControllerChecks
                 && world.widget.getHeight() == sizes[1] && nativeButton.widget.getWidth() == 22);
             check(label + "native action retained", nativeButton.widget.getOnOpListener() == action);
             check(label + "both controls registered", f.hud.snapshot().footerButtons.length == 2);
+            Rectangle textBounds = f.hud.snapshot().infoBounds;
+            Rectangle freeBounds = f.hud.snapshot().geometry.zoneText(f.hud.snapshot().footerButtons);
+            // This compact-footer fixture intentionally exercises the HUD without an injected
+            // InfoPanelService. In that configuration there is no Hammer/Eye drawer view to
+            // reserve space for, so the text bounds must remain the entire native-button gap.
+            // Hammer/Eye reservation is covered by toolDrawerBehavior and drawer geometry tests.
+            check(label + "info bounds use actual button gap", textBounds.equals(freeBounds));
+            check(label + "info text does not cover XP or globe", !textBounds.intersects(xp.widget.getBounds())
+                && !textBounds.intersects(world.widget.getBounds()));
             f.footerMode = SquareHudFooterMode.MOUSEOVER_ONLY;
             f.hud.update();
             check(label + "hidden panel keeps height", !f.hud.snapshot().footerVisible
@@ -700,7 +818,12 @@ public final class SquareHudControllerChecks
         initialized.setBoolean(f.hud, true);
         f.hud.update();
         check("Coords used in actual snapshot", f.hud.snapshot().infoText.equals("3200, 3420"));
-        check("plane in actual tooltip", f.hud.snapshot().infoTooltip.endsWith("Plane: 2"));
+        check("Info text tooltip is uniform", f.hud.snapshot().infoTooltip.equals("Click to change info"));
+        f.infoMode = InfoPanelText.COORDS_AND_PLANE;
+        f.hud.update();
+        check("Coords + Plane used in actual snapshot", f.hud.snapshot().infoText.equals("3200, 3420 | P: 2"));
+        check("new coordinate mode retained in snapshot", f.hud.snapshot().infoMode == InfoPanelText.COORDS_AND_PLANE);
+        f.infoMode = InfoPanelText.COORDS;
         f.footerMode = SquareHudFooterMode.MOUSEOVER_ONLY;
         point.set(f.hud, new net.runelite.api.coords.WorldPoint(3201, 3421, 1));
         f.hud.update();
@@ -709,10 +832,18 @@ public final class SquareHudControllerChecks
         f.infoMode = InfoPanelText.SYSTEM_TIME;
         f.hud.update();
         check("time appears in snapshot without player", f.hud.snapshot().infoText.matches("[0-9]{1,2}:[0-9]{2} [AP]M"));
+        check("Local time uses uniform change-info tooltip", f.hud.snapshot().infoTooltip.equals("Click to change info"));
+        f.infoMode = InfoPanelText.SERVER_TIME;
+        f.hud.update();
+        check("UTC server time in actual snapshot", f.hud.snapshot().infoText.matches("[0-9]{2}:[0-9]{2} UTC"));
+        check("Server time uses uniform change-info tooltip", f.hud.snapshot().infoTooltip.equals("Click to change info"));
         f.infoMode = InfoPanelText.COORDS;
         f.hud.refreshLocation(); // no player available during this simulated transition
         f.hud.update();
         check("unknown coordinates not stale", f.hud.snapshot().infoText.isEmpty());
+        f.infoMode = InfoPanelText.COORDS_AND_PLANE;
+        f.hud.update();
+        check("unknown coordinates plus plane not stale", f.hud.snapshot().infoText.isEmpty());
         f.infoMode = InfoPanelText.ZONE;
         Field zone = SquareHudController.class.getDeclaredField("zoneName");
         zone.setAccessible(true);
@@ -726,13 +857,13 @@ public final class SquareHudControllerChecks
             : InterfaceID.ToplevelOsrsStretch.MAP_MINIMAP_GRAPHIC6;
         int clickId = modern ? InterfaceID.ToplevelPreEoc.COMPASSCLICK
             : InterfaceID.ToplevelOsrsStretch.COMPASSCLICK;
-        check("Classic compass drawing hidden", f.widgets.get(drawId).widget.isHidden());
-        check("Classic compass input hidden", f.widgets.get(clickId).widget.isHidden());
+        check("Classic compass drawing unaffected by Square-only toggle", !f.widgets.get(drawId).widget.isHidden());
+        check("Classic compass input unaffected by Square-only toggle", !f.widgets.get(clickId).widget.isHidden());
         check("Classic map remains visible", !f.map.widget.isHidden());
         for (int i = 0; i < 30; i++) { f.hud.update(); }
         f.showCompass = true;
         f.hud.update();
-        check("Classic compass restored without churn", !f.widgets.get(drawId).widget.isHidden()
+        check("Classic compass remains native without churn", !f.widgets.get(drawId).widget.isHidden()
             && !f.widgets.get(clickId).widget.isHidden());
         f.showCompass = false;
         f.hud.update();
@@ -742,14 +873,14 @@ public final class SquareHudControllerChecks
         f.hud.update();
         f.appearance = MinimapAppearance.CLASSIC;
         f.hud.update();
-        check("Square/Classic leases do not retain our hidden state", !f.widgets.get(drawId).widget.isHidden()
+        check("Square/Classic transitions restore native compass", !f.widgets.get(drawId).widget.isHidden()
             && !f.widgets.get(clickId).widget.isHidden());
         f.widgets.get(drawId).widget.setHidden(true);
         f.showCompass = false;
         f.hud.update();
         f.showCompass = true;
         f.hud.update();
-        check("naturally hidden compass stays hidden", f.widgets.get(drawId).widget.isHidden());
+        check("naturally hidden Classic compass stays hidden", f.widgets.get(drawId).widget.isHidden());
     }
 
     private void fixedCompass() throws Exception
@@ -766,11 +897,11 @@ public final class SquareHudControllerChecks
         f.showCompass = false;
         f.hud.update();
         check("fixed square request uses Classic", !f.hud.isActive());
-        check("fixed compass art and click both hidden", draw.isHidden() && click.widget.isHidden());
+        check("fixed Classic compass unaffected", !draw.isHidden() && !click.widget.isHidden());
         check("fixed terrain not hidden", !terrain.isHidden());
         f.showCompass = true;
         f.hud.update();
-        check("fixed compass restores", !draw.isHidden() && !click.widget.isHidden());
+        check("fixed compass remains native", !draw.isHidden() && !click.widget.isHidden());
     }
 
     private void childOwnership(boolean modern) throws Exception
@@ -974,13 +1105,14 @@ public final class SquareHudControllerChecks
         final Map<Integer, SpritePixels> overrides = new HashMap<>();
         final TestWidget root, block, inner, map, ring, host, orbs, healthButton, specButton, worldMap, worldMapWindow, worldMapFrame, worldMapClose;
         final Client client;
+        final java.awt.Canvas canvas = new java.awt.Canvas();
         final SquareHudController hud;
         MinimapAppearance appearance = MinimapAppearance.SQUARE_HUD;
         int top;
         int cacheResets;
         boolean menuOpen;
         boolean running, stamina, specSelected, wildernessActive;
-        boolean showCompass = true;
+        boolean showCompass = true, trackingButton = true;
         InfoPanelText infoMode = InfoPanelText.ZONE;
         SquareHudFooterMode footerMode = SquareHudFooterMode.ALWAYS_VISIBLE;
         Point mouse = new Point(-1, -1);
@@ -1024,6 +1156,9 @@ public final class SquareHudControllerChecks
             {
                 switch (m.getName())
                 {
+                    case "getCanvas": return canvas;
+                    case "getCanvasWidth": return 1000;
+                    case "getCanvasHeight": return 700;
                     case "getWidget":
                         TestWidget found = widgets.get((int) a[0]);
                         return found == null ? null : found.widget;
@@ -1063,6 +1198,7 @@ public final class SquareHudControllerChecks
                 @Override public boolean enableSquareMinimap() { return appearance == MinimapAppearance.SQUARE_HUD; }
                 @Override public SquareHudFooterMode squareHudFooterMode() { return footerMode; }
                 @Override public boolean showCompass() { return showCompass; }
+                @Override public boolean enableTrackingButton() { return trackingButton; }
                 @Override public InfoPanelText infoPanelText() { return infoMode; }
             };
             hud = new SquareHudController(client, null, config, null, null, () -> now);

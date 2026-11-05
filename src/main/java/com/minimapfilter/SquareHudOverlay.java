@@ -40,6 +40,8 @@ final class SquareHudOverlay extends Overlay
     private final Client client;
     private final SquareHudController hud;
     private final TooltipManager tooltips;
+    @Inject
+    private TrackingVisibility trackingVisibility;
     private final SquareHudIconRenderer resourceIcons = new SquareHudIconRenderer();
     private BufferedImage specialTintSource;
     private BufferedImage specialTint;
@@ -198,18 +200,75 @@ final class SquareHudOverlay extends Overlay
         g.drawRect(rect.x, rect.y, rect.width - 1, rect.height - 1);
         g.setColor(TRIM);
         g.drawRect(rect.x + 1, rect.y + 1, rect.width - 3, rect.height - 3);
-        Rectangle text = view.geometry.zoneText();
-        if (!view.infoText.isEmpty())
+        Rectangle text = view.infoBounds;
+        if (view.infoMode == InfoPanelText.VOLUME)
         {
-            String display = SquareHudText.fit(view.infoText, g.getFontMetrics(), text.width - 4);
-            centeredText(g, display, (int) text.getCenterX(), (int) text.getCenterY(), TEXT);
+            InfoPanelVolumeBar bar = hud.volumeBar();
             net.runelite.api.Point mouse = client.getMouseCanvasPosition();
-            if (tooltips != null && !client.isMenuOpen() && mouse != null
-                && text.contains(mouse.getX(), mouse.getY()))
+            java.awt.Point point = client.isMenuOpen() || mouse == null ? null
+                : new java.awt.Point(mouse.getX(), mouse.getY());
+            if (bar != null)
+            {
+                bar.paint(g, point);
+                String tooltip = bar.tooltip(point);
+                if (tooltips != null && !tooltip.isEmpty()) { tooltips.add(new Tooltip(tooltip)); }
+            }
+        }
+        else
+        {
+            net.runelite.api.Point mouse = client.getMouseCanvasPosition();
+            boolean interactiveHover = !client.isMenuOpen() && mouse != null
+                && text.contains(mouse.getX(), mouse.getY());
+            if (!view.infoText.isEmpty())
+            {
+                paintInfoText(g, text, view.infoText, view.infoCompactText, interactiveHover ? ACTIVE : TEXT);
+            }
+            if (tooltips != null && interactiveHover && !view.infoTooltip.isEmpty())
             {
                 tooltips.add(new Tooltip(view.infoTooltip));
             }
         }
+        if (view.drawer != null && view.drawer.visible && !view.drawer.layout.eye.isEmpty())
+        {
+            net.runelite.api.Point mouse = client.getMouseCanvasPosition();
+            java.awt.Point point = client.isMenuOpen() || mouse == null ? null
+                : new java.awt.Point(mouse.getX(), mouse.getY());
+            boolean overEye = point != null && view.drawer.layout.eye.contains(point);
+            InfoPanelEyeOrb.paint(g, view.drawer.layout.eye, overEye, trackingVisibility == null || trackingVisibility.anyEffective());
+            if (tooltips != null && overEye) { tooltips.add(new Tooltip("Tracking")); }
+        }
+        net.runelite.api.Point cursor = client.getMouseCanvasPosition();
+        java.awt.Point hover = client.isMenuOpen() || cursor == null ? null
+            : new java.awt.Point(cursor.getX(), cursor.getY());
+        String drawerTip = InfoPanelDrawerPainter.paint(g, view.drawer, hover, hud.drawerIcons(),
+            hud::toolContent, hud.drawerVolumeBar(), hud.volumeMuted(), hud.openPopupMode());
+        if (tooltips != null && !drawerTip.isEmpty()) { tooltips.add(new Tooltip(drawerTip)); }
+    }
+
+    static void paintInfoText(Graphics2D g, Rectangle rect, String full, String compact, Color color)
+    {
+        FontMetrics fm = g.getFontMetrics();
+        int width = Math.max(0, rect.width - 4);
+        if (width <= 0) { return; }
+        if (fm.stringWidth(full) <= width)
+        {
+            centeredText(g, full, (int) rect.getCenterX(), (int) rect.getCenterY(), color);
+            return;
+        }
+        String[] lines = SquareHudText.wrapTwoLines(full, fm, width);
+        boolean canWrap = !lines[1].isEmpty() && rect.height >= Math.max(24, fm.getHeight() + 8);
+        if (!canWrap)
+        {
+            centeredText(g, SquareHudText.fit(compact, fm, width),
+                (int) rect.getCenterX(), (int) rect.getCenterY(), color);
+            return;
+        }
+        int separation = Math.min(fm.getHeight(), Math.max(12, rect.height / 2));
+        int centerY = (int) rect.getCenterY();
+        int firstY = centerY - separation / 2;
+        int secondY = centerY + (separation + 1) / 2;
+        centeredText(g, lines[0], (int) rect.getCenterX(), firstY, color);
+        centeredText(g, lines[1], (int) rect.getCenterX(), secondY, color);
     }
 
     private static void centeredText(Graphics2D g, String text, int centerX, int centerY, Color color)
