@@ -182,9 +182,8 @@ final class InfoPanelPopup
         if (refresh != null) { refresh.stop(); refresh = null; }
         JDialog old = dialog;
         Component source = returnFocus;
-        Window focused = java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusedWindow();
         boolean handBack = restoreFocus && source != null && source.isShowing()
-            && (focused == old || focused == SwingUtilities.getWindowAncestor(source));
+            && old != null && old.isFocused();
         dialog = null;
         returnFocus = null;
         positionChanged = point -> { };
@@ -194,7 +193,7 @@ final class InfoPanelPopup
             onClose.run();
             // Escape/Close should leave the canvas ready for the very next toolbar
             // click. Do not focus the game when a different application took focus.
-            if (handBack) { source.requestFocus(); }
+            if (handBack) { source.requestFocusInWindow(); }
         }
     }
 
