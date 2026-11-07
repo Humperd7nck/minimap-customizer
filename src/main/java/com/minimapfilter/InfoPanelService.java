@@ -28,8 +28,8 @@ import net.runelite.api.clan.ClanMember;
 import net.runelite.api.clan.ClanSettings;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.client.Notifier;
-import net.runelite.client.RuneLite;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.util.Filepath;
 import net.runelite.client.game.WorldService;
 import net.runelite.client.plugins.worldhopper.ping.Ping;
 import net.runelite.http.api.worlds.World;
@@ -53,6 +53,7 @@ final class InfoPanelService
     private final InfoPanelQuickControls quickControls = new InfoPanelQuickControls(tools, reminders);
     private final InfoPanelReminderInput reminderInput = new InfoPanelReminderInput(this::dismissNotice);
     private volatile InfoPanelNotebook notebook = InfoPanelNotebook.memory();
+    private Filepath notebookDirectory;
     private InfoPanelNotebookStore notebookStore;
     private InfoPanelNotebookStore.Session notebookSession;
     private final InfoPanelVolume volume = new InfoPanelVolume();
@@ -217,6 +218,12 @@ final class InfoPanelService
         { reminders.dismiss(notice); }
     }
 
+    synchronized void setNotebookDirectory(Filepath directory)
+    {
+        if (running) { throw new IllegalStateException("Notebook directory cannot change while running"); }
+        notebookDirectory = java.util.Objects.requireNonNull(directory);
+    }
+
     private void releaseNotebook()
     {
         notebook.deactivate();
@@ -233,8 +240,14 @@ final class InfoPanelService
             notebook.failure("RuneLite profile unavailable; notes not loaded.");
             return;
         }
+        if (notebookDirectory == null)
+        {
+            notebook = new InfoPanelNotebook();
+            notebook.failure("Plugin storage unavailable; notes not loaded.");
+            return;
+        }
         if (notebookStore == null)
-        { notebookStore = new InfoPanelNotebookStore(RuneLite.RUNELITE_DIR.toPath().resolve("minimap-customizer")); }
+        { notebookStore = new InfoPanelNotebookStore(notebookDirectory); }
         notebookSession = notebookStore.open(profileConfig.getProfile().getId());
         notebook = notebookSession.notebook;
     }

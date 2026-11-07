@@ -46,6 +46,8 @@ import net.runelite.client.ui.overlay.OverlayManager;
 @Slf4j
 @PluginDescriptor(
     name = "Minimap Customizer",
+    internalName = "minimap-customizer",
+    legacyDataDirectory = "minimap-customizer",
     description = "Customize native minimap icons, entity markers, dot colors, and player direction with flexible visibility settings",
     tags = {"minimap", "dots", "icons", "filter", "direction", "npcs", "players", "items", "markers"}
 )
@@ -991,8 +993,9 @@ public class MinimapFilterPlugin extends Plugin
     }
 
     @Override
-    protected void startUp()
+    protected void startUp() throws IOException
     {
+        infoPanel.setNotebookDirectory(getPluginDirectory());
         MinimapLayoutMigration.migrate(configManager);
         AttackableNpcMarkerStyleMigration.migrate(configManager);
         migrateTreeVisibilitySettings();

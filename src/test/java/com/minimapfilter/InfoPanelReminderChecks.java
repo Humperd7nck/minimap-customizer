@@ -27,6 +27,7 @@ import javax.swing.JSpinner;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
+import net.runelite.client.util.Filepath;
 
 /** Actual new models, atomic disk store and Swing controls. No RuneLite API stubs. */
 public final class InfoPanelReminderChecks
@@ -159,12 +160,13 @@ public final class InfoPanelReminderChecks
     private void storage() throws Exception
     {
         Path dir=Files.createTempDirectory("minimap-notebook-test");
+        Filepath root=Filepath.Unchecked.getRooted(dir);
         try
         {
-            InfoPanelNotebookStore store=new InfoPanelNotebookStore(dir);
+            InfoPanelNotebookStore store=new InfoPanelNotebookStore(root);
             InfoPanelNotebookStore.Session a=store.open(11); waitFor(() -> a.notebook.snapshot().loaded);
             a.notebook.setNotes("profile eleven"); a.notebook.add("First task"); a.notebook.toggle(0);
-            waitFor(() -> !a.notebook.snapshot().dirty); check("debounced autosave creates file",Files.exists(a.file));
+            waitFor(() -> !a.notebook.snapshot().dirty); check("debounced autosave creates file",a.file.exists());
             a.notebook.setNotes("final eleven"); store.release(a);
             InfoPanelNotebookStore.Session b=store.open(22); waitFor(() -> b.notebook.snapshot().loaded);
             check("other profile starts empty",b.notebook.snapshot().notes.isEmpty());
@@ -173,21 +175,21 @@ public final class InfoPanelReminderChecks
             eq("old profile flushed before reload","final eleven",a2.notebook.snapshot().notes);
             check("checked state persisted",a2.notebook.snapshot().tasks.get(0).done);
             a2.notebook.setNotes("shutdown flush"); store.close(); check("worker exits cleanly",store.awaitClosed(3000));
-            eq("shutdown saves final edit","shutdown flush",InfoPanelNotebookStore.decode(Files.readString(a.file)).notes);
-            eq("profile isolation","profile twenty-two",InfoPanelNotebookStore.decode(Files.readString(b.file)).notes);
-            Files.writeString(dir.resolve("notes-33.properties"),"broken-data",StandardCharsets.UTF_8);
-            InfoPanelNotebookStore second=new InfoPanelNotebookStore(dir); InfoPanelNotebookStore.Session corrupt=second.open(33);
+            eq("shutdown saves final edit","shutdown flush",InfoPanelNotebookStore.decode(read(a.file)).notes);
+            eq("profile isolation","profile twenty-two",InfoPanelNotebookStore.decode(read(b.file)).notes);
+            root.joinSegment("notes-33.properties").write("broken-data");
+            InfoPanelNotebookStore second=new InfoPanelNotebookStore(root); InfoPanelNotebookStore.Session corrupt=second.open(33);
             waitFor(() -> corrupt.notebook.snapshot().status.contains("Could not"));
             check("corrupt file noneditable",!corrupt.notebook.snapshot().editable);
             corrupt.notebook.setNotes("do not overwrite"); second.close(); second.awaitClosed(3000);
-            eq("corrupt original retained","broken-data",Files.readString(corrupt.file));
-            Path blocker=dir.resolve("not-a-directory"); Files.writeString(blocker,"keep");
+            eq("corrupt original retained","broken-data",read(corrupt.file));
+            Filepath blocker=root.joinSegment("not-a-directory"); blocker.write("keep");
             InfoPanelNotebookStore badStore=new InfoPanelNotebookStore(blocker); InfoPanelNotebookStore.Session unsaved=badStore.open(4);
             waitFor(() -> unsaved.notebook.snapshot().loaded);
             unsaved.notebook.setNotes("recover me"); waitFor(() -> unsaved.notebook.snapshot().status.contains("failed"));
             eq("failed save retains memory","recover me",unsaved.notebook.snapshot().notes);
-            Files.delete(blocker); unsaved.notebook.retry(); waitFor(() -> !unsaved.notebook.snapshot().dirty);
-            check("retry saves after disk recovery",Files.exists(unsaved.file)); badStore.close();badStore.awaitClosed(3000);
+            blocker.delete(); unsaved.notebook.retry(); waitFor(() -> !unsaved.notebook.snapshot().dirty);
+            check("retry saves after disk recovery",unsaved.file.exists()); badStore.close();badStore.awaitClosed(3000);
         }
         finally
         {
@@ -195,6 +197,12 @@ public final class InfoPanelReminderChecks
             { for(Path f:(Iterable<Path>)paths.sorted(java.util.Comparator.reverseOrder())::iterator) { Files.deleteIfExists(f); } }
         }
     }
+    private static String read(Filepath file) throws Exception
+    {
+        try(var input=file.openInputStream())
+        { return new String(input.readAllBytes(),StandardCharsets.UTF_8); }
+    }
+
     static void waitFor(BooleanSupplier condition) throws Exception
     {
         long end=System.nanoTime()+TimeUnitHelper.SECONDS_5;

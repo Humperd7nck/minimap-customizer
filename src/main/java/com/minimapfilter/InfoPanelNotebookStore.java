@@ -5,8 +5,6 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -17,12 +15,13 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import net.runelite.client.util.Filepath;
 
 /** Local-only, bounded, atomic notebook storage. All disk work uses one owned worker. */
 final class InfoPanelNotebookStore implements AutoCloseable
 {
-    private static final long MAX_BYTES=512_000;
-    private final Path directory;
+    private static final int MAX_BYTES=512_000;
+    private final Filepath directory;
     private final ScheduledExecutorService io;
     private static ScheduledExecutorService worker()
     {
@@ -36,16 +35,16 @@ final class InfoPanelNotebookStore implements AutoCloseable
     private final Set<Session> sessions=new HashSet<>();
     private boolean closed;
 
-    InfoPanelNotebookStore(Path directory) { this.directory=directory; this.io=worker(); }
+    InfoPanelNotebookStore(Filepath directory) { this.directory=directory; this.io=worker(); }
     final class Session
     {
         final InfoPanelNotebook notebook=new InfoPanelNotebook();
-        final Path file;
+        final Filepath file;
         private ScheduledFuture<?> pending;
         private boolean released;
         Session(long profile)
         {
-            file=directory.resolve("notes-"+Long.toUnsignedString(profile)+".properties");
+            file=directory.joinSegment("notes-"+Long.toUnsignedString(profile)+".properties");
             notebook.onChange(this::schedule);
             notebook.onRetry(this::retry);
         }
@@ -53,10 +52,13 @@ final class InfoPanelNotebookStore implements AutoCloseable
         {
             try
             {
-                if(Files.exists(file))
+                if(file.exists())
                 {
-                    if(Files.size(file)>MAX_BYTES) { throw new IOException("Notebook too large"); }
-                    InfoPanelNotebook.Snapshot s=decode(Files.readString(file,StandardCharsets.UTF_8));
+                    if(file.size()>MAX_BYTES) { throw new IOException("Notebook too large"); }
+                    byte[] data;
+                    try(var input=file.openInputStream()) { data=input.readNBytes(MAX_BYTES+1); }
+                    if(data.length>MAX_BYTES) { throw new IOException("Notebook too large"); }
+                    InfoPanelNotebook.Snapshot s=decode(new String(data,StandardCharsets.UTF_8));
                     notebook.load(s.notes,s.tasks);
                 }
                 else { notebook.load("",java.util.Collections.emptyList()); }
@@ -86,19 +88,19 @@ final class InfoPanelNotebookStore implements AutoCloseable
         {
             InfoPanelNotebook.Snapshot snapshot=notebook.snapshot();
             if(!snapshot.loaded || !snapshot.dirty) { return; }
-            Path tmp=null;
+            Filepath tmp=null;
             try
             {
-                Files.createDirectories(directory);
+                directory.createDirectories();
                 String encoded=encode(snapshot);
-                tmp=Files.createTempFile(directory,"notes-",".tmp");
-                Files.writeString(tmp,encoded,StandardCharsets.UTF_8);
-                try { Files.move(tmp,file,StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING); }
-                catch(AtomicMoveNotSupportedException ex) { Files.move(tmp,file,StandardCopyOption.REPLACE_EXISTING); }
+                tmp=directory.createTempFile("notes-",".tmp");
+                tmp.write(encoded);
+                try { tmp.moveTo(file,StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING); }
+                catch(AtomicMoveNotSupportedException ex) { tmp.moveTo(file,StandardCopyOption.REPLACE_EXISTING); }
                 notebook.saved(snapshot.revision);
             }
             catch(IOException | RuntimeException ex) { notebook.failure("Save failed; notes remain in memory. Use Retry."); }
-            finally { if(tmp!=null) { try { Files.deleteIfExists(tmp); } catch(IOException ignored) { } } }
+            finally { if(tmp!=null) { try { tmp.deleteIfExists(); } catch(IOException ignored) { } } }
         }
     }
     synchronized Session open(long profile)
