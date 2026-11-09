@@ -176,7 +176,7 @@ public final class LootingBagChecks
         check("native dot default retained", c.groundItemMarkerStyle() == GroundItemMarkerStyle.NATIVE_DOT);
         check("native dot red unchanged", c.groundItemDotColor().equals(new Color(0xFF0000)));
         ConfigSection section = MinimapFilterConfig.class.getField("LOOTING_BAG_COLORS").getAnnotation(ConfigSection.class);
-        check("section full title", section.name().equals(LootingBagColorControls.TITLE));
+        check("section full title", section.name().equals("Looting bag colors (ground item icon)"));
         check("section collapsed", section.closedByDefault());
         int colors = 0, switches = 0;
         for (java.lang.reflect.Method method : MinimapFilterConfig.class.getDeclaredMethods())

@@ -11,10 +11,4 @@ public class LootingBagRegressionTest
         assertTrue(LootingBagChecks.runAll() > 0);
     }
 
-    @Test
-    public void inactiveSectionAndRestoration() throws Exception
-    {
-        assertTrue(LootingBagControlsChecks.runAll() > 0);
-    }
-
 }

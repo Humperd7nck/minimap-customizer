@@ -63,6 +63,39 @@ final class SquareHudGeometry
             footer.width - 2 * FOOTER_SLOT_WIDTH, footer.height - 2 * BORDER);
     }
 
+    /** Free space between the actual native controls; neither control is moved or resized. */
+    Rectangle zoneText(Rectangle[] controls)
+    {
+        if (controls == null || controls.length == 0) { return zoneText(); }
+        Rectangle footer = footer();
+        int gap = 2;
+        int left = footer.x + BORDER + gap;
+        int right = footer.x + footer.width - BORDER - gap;
+        double middle = footer.getCenterX();
+        for (Rectangle control : controls)
+        {
+            if (control == null || !control.intersects(footer)) { continue; }
+            Rectangle occupied = control.intersection(footer);
+            if (occupied.getMaxX() <= middle)
+            {
+                left = Math.max(left, occupied.x + occupied.width + gap);
+            }
+            else if (occupied.x >= middle)
+            {
+                right = Math.min(right, occupied.x - gap);
+            }
+            else
+            {
+                // Unexpected native layout: do not draw or open tools over a button.
+                return new Rectangle(footer.x + footer.width / 2, footer.y + BORDER,
+                    0, footer.height - 2 * BORDER);
+            }
+        }
+        left = Math.min(left, footer.x + footer.width - BORDER);
+        return new Rectangle(left, footer.y + BORDER, Math.max(0, right - left),
+            footer.height - 2 * BORDER);
+    }
+
     Rectangle map()
     {
         return new Rectangle(x + BORDER + COLUMN_WIDTH + GAP, y + BORDER, MAP_SIZE, MAP_SIZE);

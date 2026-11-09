@@ -1,9 +1,5 @@
 package com.minimapfilter;
 
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.time.Clock;
@@ -12,14 +8,10 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.Map;
-import javax.swing.JComboBox;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.SwingUtilities;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
 
-/** Deterministic clock/coordinate, migration and real Swing-component checks. */
+/** Deterministic clock/coordinate, config metadata and migration checks. */
 public final class SquareHudInfoPanelChecks
 {
     private int cases;
@@ -36,7 +28,6 @@ public final class SquareHudInfoPanelChecks
         c.clock();
         c.text();
         c.migrations();
-        SwingUtilities.invokeAndWait(c::controls);
         return c.cases;
     }
 
@@ -174,68 +165,6 @@ public final class SquareHudInfoPanelChecks
         {
             check("failed write retains old preference", fresh.containsKey(MinimapLayoutMigration.LEGACY));
         }
-    }
-
-    private void controls()
-    {
-        MinimapLayoutControls controls = new MinimapLayoutControls(new MinimapFilterConfig() {});
-        JPanel root = new JPanel();
-        JComboBox<SquareHudFooterMode> view = new JComboBox<>(SquareHudFooterMode.values());
-        view.setSelectedItem(SquareHudFooterMode.MOUSEOVER_ONLY);
-        JLabel viewLabel = row(root, "Info panel view", view);
-        JComboBox<InfoPanelText> text = new JComboBox<>(InfoPanelText.values());
-        text.setSelectedItem(InfoPanelText.COORDS);
-        JLabel textLabel = row(root, "Info panel text", text);
-        JComboBox<String> unrelated = new JComboBox<>(new String[]{"Zone", "System Time", "Coords"});
-        row(root, "Other plugin", unrelated);
-        int[] resetClicks = {0};
-        MouseAdapter reset = new MouseAdapter()
-        {
-            @Override public void mouseClicked(MouseEvent e) { resetClicks[0]++; }
-        };
-        textLabel.addMouseListener(reset);
-        Color original = textLabel.getForeground();
-        controls.updateTree(root, false);
-        check("both dropdowns disabled", !view.isEnabled() && !text.isEnabled());
-        check("both labels disabled", !viewLabel.isEnabled() && !textLabel.isEnabled());
-        check("label grayed", textLabel.getForeground().equals(new Color(128, 128, 128)));
-        check("similar unrelated choices untouched", unrelated.isEnabled());
-        check("selection retained while disabled", view.getSelectedItem() == SquareHudFooterMode.MOUSEOVER_ONLY
-            && text.getSelectedItem() == InfoPanelText.COORDS);
-        for (java.awt.event.MouseListener listener : textLabel.getMouseListeners())
-        {
-            if (!(listener instanceof javax.swing.ToolTipManager)) { listener.mouseClicked(null); }
-        }
-        check("disabled label cannot reset value", resetClicks[0] == 0);
-        for (int i = 0; i < 30; i++) { controls.updateTree(root, false); }
-        controls.updateTree(root, true);
-        check("both dropdowns re-enabled", view.isEnabled() && text.isEnabled());
-        check("labels and colors restored", textLabel.isEnabled() && textLabel.getForeground().equals(original));
-        check("no changes to saved selection", text.getSelectedItem() == InfoPanelText.COORDS);
-        int listenerCount = 0;
-        for (java.awt.event.MouseListener listener : textLabel.getMouseListeners()) { if (listener == reset) { listenerCount++; } }
-        check("reset listener restored exactly once", listenerCount == 1);
-        controls.updateTree(root, false);
-        controls.updateTree(new JPanel(), false);
-        check("closed/rebuilt panel releases old controls", view.isEnabled() && text.isEnabled());
-        controls.updateTree(root, false);
-        controls.restoreAll();
-        check("stop restores controls", view.isEnabled() && text.isEnabled());
-        text.setEnabled(false);
-        controls.updateTree(root, false);
-        controls.restoreAll();
-        check("preexisting disabled state preserved", !text.isEnabled());
-    }
-
-    private JLabel row(JPanel root, String title, JComboBox<?> box)
-    {
-        JPanel row = new JPanel(new BorderLayout());
-        JLabel label = new JLabel(title);
-        label.setForeground(Color.WHITE);
-        row.add(label, BorderLayout.CENTER);
-        row.add(box, BorderLayout.EAST);
-        root.add(row);
-        return label;
     }
 
     private static final class MutableClock extends Clock

@@ -857,11 +857,6 @@ public class MinimapFilterPlugin extends Plugin
     private EntityMarkerOverlay entityMarkerOverlay;
 
     @Inject
-    private WildernessPlayerOverlay wildernessPlayerOverlay;
-
-    private boolean wildernessPlayerDotSuppressed;
-
-    @Inject
     private SquareHudController squareHud;
 
     @Inject
@@ -875,9 +870,6 @@ public class MinimapFilterPlugin extends Plugin
 
     @Inject
     private SquareHudTerrainSeamOverlay squareHudTerrainSeamOverlay;
-
-    @Inject
-    private MinimapLayoutControls layoutControls;
 
     @Inject
     private MinimapMarkerAssets markerAssets;
@@ -978,7 +970,6 @@ public class MinimapFilterPlugin extends Plugin
     {
         MinimapLayoutMigration.migrate(configManager);
         squareHud.settingsChanged();
-        layoutControls.settingsChanged();
         migrateTreeVisibilitySettings();
         clientThread.invokeLater(this::applyFilters);
     }
@@ -991,14 +982,12 @@ public class MinimapFilterPlugin extends Plugin
         treeMapSceneOverlay = new TreeMapSceneOverlay(this, squareHud);
         overlayManager.add(treeMapSceneOverlay);
         overlayManager.add(entityMarkerOverlay);
-        overlayManager.add(wildernessPlayerOverlay);
         overlayManager.add(playerDirectionOverlay);
         overlayManager.add(squareHudBackdrop);
         overlayManager.add(squareHudTerrainCornersOverlay);
         overlayManager.add(squareHudTerrainSeamOverlay);
         overlayManager.add(squareHudOverlay);
         squareHud.start();
-        layoutControls.start();
         clientThread.invokeLater(() ->
         {
             createTransparentSprites();
@@ -1012,7 +1001,6 @@ public class MinimapFilterPlugin extends Plugin
     @Override
     protected void shutDown()
     {
-        layoutControls.stop();
         squareHud.stop();
         overlayManager.remove(squareHudTerrainSeamOverlay);
         overlayManager.remove(squareHudTerrainCornersOverlay);
@@ -1020,7 +1008,6 @@ public class MinimapFilterPlugin extends Plugin
         overlayManager.remove(squareHudBackdrop);
         overlayManager.remove(playerDirectionOverlay);
         overlayManager.remove(entityMarkerOverlay);
-        overlayManager.remove(wildernessPlayerOverlay);
         if (treeMapSceneOverlay != null)
         {
             overlayManager.remove(treeMapSceneOverlay);
@@ -1029,8 +1016,6 @@ public class MinimapFilterPlugin extends Plugin
         clientThread.invokeLater(() ->
         {
             restoreDots();
-            wildernessPlayerOverlay.clear();
-            wildernessPlayerDotSuppressed = false;
             restoreLiveIcons();
             restoreMapSceneFilters();
             Arrays.fill(visibleDotSprites, null);
@@ -1063,7 +1048,6 @@ public class MinimapFilterPlugin extends Plugin
         squareHud.settingsChanged();
         if (MinimapFilterConfig.GROUP.equals(event.getGroup()))
         {
-            layoutControls.settingsChanged();
             clientThread.invokeLater(this::applyFilters);
             return;
         }
@@ -1090,14 +1074,12 @@ public class MinimapFilterPlugin extends Plugin
     {
         squareHud.update();
         squareHudTerrainCornersOverlay.refreshOnClientThread();
-        refreshWildernessPlayerDots();
     }
 
     @Subscribe
     public void onGameStateChanged(GameStateChanged event)
     {
         squareHud.onGameStateChanged(event.getGameState());
-        if (event.getGameState() != GameState.LOGGED_IN) { wildernessPlayerOverlay.clear(); }
         if (event.getGameState() == GameState.STARTING)
         {
             Arrays.fill(visibleDotSprites, null);
@@ -1324,10 +1306,7 @@ public class MinimapFilterPlugin extends Plugin
             config.groundItemDotColor(), NativeDotColors.ITEM);
         setDot(mapDots, DOT_NPC, nativeNpcDots,
             config.attackableNpcDotColor(), NativeDotColors.NPC);
-        wildernessPlayerOverlay.refresh();
-        wildernessPlayerOverlay.setFallbackDot(visibleDotSprites[DOT_PLAYER], config.otherPlayerDotColor());
-        wildernessPlayerDotSuppressed = wildernessPlayerOverlay.isReplacingOtherPlayers();
-        setDot(mapDots, DOT_PLAYER, config.showPlayers() && !wildernessPlayerDotSuppressed,
+        setDot(mapDots, DOT_PLAYER, config.showPlayers(),
             config.otherPlayerDotColor(), NativeDotColors.PLAYER);
         setDot(mapDots, DOT_FRIEND, config.showFriends(),
             config.friendDotColor(), NativeDotColors.FRIEND);
@@ -1337,24 +1316,6 @@ public class MinimapFilterPlugin extends Plugin
             config.friendsChatDotColor(), NativeDotColors.FRIENDS_CHAT);
         setDot(mapDots, DOT_CLAN, config.showClan(),
             config.clanDotColor(), NativeDotColors.CLAN);
-    }
-
-    private void refreshWildernessPlayerDots()
-    {
-        if (!config.wildernessPlayerSkulls() && !wildernessPlayerDotSuppressed) { return; }
-        wildernessPlayerOverlay.refresh();
-        boolean suppress = wildernessPlayerOverlay.isReplacingOtherPlayers();
-        SpritePixels[] dots = client.getMapDots();
-        if (dots == null || dots.length <= DOT_PLAYER) { return; }
-        if (suppress == wildernessPlayerDotSuppressed
-            && (!suppress || dots[DOT_PLAYER] == transparentDot)) { return; }
-
-        createTransparentSprites();
-        refreshVisibleDotSprites();
-        wildernessPlayerOverlay.setFallbackDot(visibleDotSprites[DOT_PLAYER], config.otherPlayerDotColor());
-        setDot(dots, DOT_PLAYER, config.showPlayers() && !suppress,
-            config.otherPlayerDotColor(), NativeDotColors.PLAYER);
-        wildernessPlayerDotSuppressed = suppress;
     }
 
     private void setDot(SpritePixels[] mapDots, int index, boolean visible,

@@ -135,7 +135,7 @@ public interface MinimapFilterConfig extends Config
     @ConfigItem(
         keyName = "showCompass",
         name = "Show compass",
-        description = "Show the native compass in Classic or the diamond in Square HUD. Hidden compasses do not accept clicks.",
+        description = "Show the compass in the Square minimap. Classic circular minimaps are not changed.",
         section = LAYOUT,
         position = 0
     )
@@ -241,23 +241,11 @@ public interface MinimapFilterConfig extends Config
     }
 
     @ConfigItem(
-        keyName = "wildernessPlayerSkulls",
-        name = "Wilderness player skulls",
-        description = "Replace Other players dots in normal-world Wilderness: red inside your combat-level bracket, white outside. Not actual PvP skulls or an attack/safety guarantee. Friends, clan and team keep their own markers. Special worlds or unknown range keep normal dots. Requires Other players.",
-        section = ENTITY_DOTS,
-        position = 5
-    )
-    default boolean wildernessPlayerSkulls()
-    {
-        return false;
-    }
-
-    @ConfigItem(
         keyName = "showFriends",
         name = "Friends",
         description = "Show friend dots.",
         section = ENTITY_DOTS,
-        position = 6
+        position = 5
     )
     default boolean showFriends()
     {
@@ -269,7 +257,7 @@ public interface MinimapFilterConfig extends Config
         name = "Team",
         description = "Show team-cape dots.",
         section = ENTITY_DOTS,
-        position = 7
+        position = 6
     )
     default boolean showTeam()
     {
@@ -281,7 +269,7 @@ public interface MinimapFilterConfig extends Config
         name = "Friends chat",
         description = "Show friends-chat member dots.",
         section = ENTITY_DOTS,
-        position = 8
+        position = 7
     )
     default boolean showFriendsChat()
     {
@@ -293,7 +281,7 @@ public interface MinimapFilterConfig extends Config
         name = "Clan",
         description = "Show clan-member dots.",
         section = ENTITY_DOTS,
-        position = 9
+        position = 8
     )
     default boolean showClan()
     {

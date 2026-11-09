@@ -19,8 +19,7 @@ public class MinimapFilterConfigTest
             if (method.isAnnotationPresent(net.runelite.client.config.ConfigItem.class)
                 && method.getReturnType() == boolean.class
                 && !method.getName().equals("enableSquareMinimap")
-                && !method.getName().equals("colorLootingBagIconsByValue")
-                && !method.getName().equals("wildernessPlayerSkulls"))
+                && !method.getName().equals("colorLootingBagIconsByValue"))
             {
                 assertTrue("Visibility setting is unchecked: " + method.getName(),
                     (Boolean) method.invoke(config));

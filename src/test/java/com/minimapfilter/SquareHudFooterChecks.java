@@ -62,6 +62,16 @@ public final class SquareHudFooterChecks
         check("map still 152 square", g.map().width == 152 && g.map().height == 152);
         check("footer 34 high", f.height == 34);
         check("text between controls", f.contains(g.zoneText()) && g.zoneText().width > 0);
+        Rectangle left = new Rectangle(f.x + 3, f.y + 2, 37, 30);
+        Rectangle right = new Rectangle(f.x + f.width - 42, f.y + 2, 40, 30);
+        Rectangle leftBefore = new Rectangle(left), rightBefore = new Rectangle(right);
+        Rectangle clear = g.zoneText(new Rectangle[]{left, right});
+        check("text clears actual native button sizes", f.contains(clear)
+            && !clear.intersects(left) && !clear.intersects(right) && clear.width > 0);
+        check("clearance never moves native buttons", left.equals(leftBefore) && right.equals(rightBefore));
+        Rectangle middle = new Rectangle((int) f.getCenterX() - 4, f.y, 8, f.height);
+        check("unexpected central button suppresses text", g.zoneText(new Rectangle[]{middle}).width == 0);
+        check("missing native buttons use original bounds", g.zoneText(null).equals(g.zoneText()));
         check("reveal strip over bottom border", g.footerReveal().contains(f.x + 20, f.y - 1));
         check("reveal not on map", !g.footerReveal().contains(g.map().x + 20, g.map().y + 20));
     }

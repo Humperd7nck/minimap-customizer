@@ -726,13 +726,13 @@ public final class SquareHudControllerChecks
             : InterfaceID.ToplevelOsrsStretch.MAP_MINIMAP_GRAPHIC6;
         int clickId = modern ? InterfaceID.ToplevelPreEoc.COMPASSCLICK
             : InterfaceID.ToplevelOsrsStretch.COMPASSCLICK;
-        check("Classic compass drawing hidden", f.widgets.get(drawId).widget.isHidden());
-        check("Classic compass input hidden", f.widgets.get(clickId).widget.isHidden());
+        check("Classic compass drawing unaffected by Square-only toggle", !f.widgets.get(drawId).widget.isHidden());
+        check("Classic compass input unaffected by Square-only toggle", !f.widgets.get(clickId).widget.isHidden());
         check("Classic map remains visible", !f.map.widget.isHidden());
         for (int i = 0; i < 30; i++) { f.hud.update(); }
         f.showCompass = true;
         f.hud.update();
-        check("Classic compass restored without churn", !f.widgets.get(drawId).widget.isHidden()
+        check("Classic compass remains native without churn", !f.widgets.get(drawId).widget.isHidden()
             && !f.widgets.get(clickId).widget.isHidden());
         f.showCompass = false;
         f.hud.update();
@@ -742,14 +742,14 @@ public final class SquareHudControllerChecks
         f.hud.update();
         f.appearance = MinimapAppearance.CLASSIC;
         f.hud.update();
-        check("Square/Classic leases do not retain our hidden state", !f.widgets.get(drawId).widget.isHidden()
+        check("Square/Classic transitions restore native compass", !f.widgets.get(drawId).widget.isHidden()
             && !f.widgets.get(clickId).widget.isHidden());
         f.widgets.get(drawId).widget.setHidden(true);
         f.showCompass = false;
         f.hud.update();
         f.showCompass = true;
         f.hud.update();
-        check("naturally hidden compass stays hidden", f.widgets.get(drawId).widget.isHidden());
+        check("naturally hidden Classic compass stays hidden", f.widgets.get(drawId).widget.isHidden());
     }
 
     private void fixedCompass() throws Exception
@@ -766,11 +766,11 @@ public final class SquareHudControllerChecks
         f.showCompass = false;
         f.hud.update();
         check("fixed square request uses Classic", !f.hud.isActive());
-        check("fixed compass art and click both hidden", draw.isHidden() && click.widget.isHidden());
+        check("fixed Classic compass unaffected", !draw.isHidden() && !click.widget.isHidden());
         check("fixed terrain not hidden", !terrain.isHidden());
         f.showCompass = true;
         f.hud.update();
-        check("fixed compass restores", !draw.isHidden() && !click.widget.isHidden());
+        check("fixed compass remains native", !draw.isHidden() && !click.widget.isHidden());
     }
 
     private void childOwnership(boolean modern) throws Exception

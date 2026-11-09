@@ -198,8 +198,8 @@ final class SquareHudOverlay extends Overlay
         g.drawRect(rect.x, rect.y, rect.width - 1, rect.height - 1);
         g.setColor(TRIM);
         g.drawRect(rect.x + 1, rect.y + 1, rect.width - 3, rect.height - 3);
-        Rectangle text = view.geometry.zoneText();
-        if (!view.infoText.isEmpty())
+        Rectangle text = view.geometry.zoneText(view.footerButtons);
+        if (text.width > 4 && !view.infoText.isEmpty())
         {
             String display = SquareHudText.fit(view.infoText, g.getFontMetrics(), text.width - 4);
             centeredText(g, display, (int) text.getCenterX(), (int) text.getCenterY(), TEXT);

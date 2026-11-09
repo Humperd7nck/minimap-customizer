@@ -24,5 +24,12 @@ Customize your minimap! Change icons, remove clutter, go square, and much more.
 - **Entity markers:** Choose how you, other players, NPCs, and ground items appear. Customize their colors or change their icons entirely.
 - **Map icons:** Toggle banks, shops, skilling facilities, foliage, and other map icon categories independently to see only what you want.
 - **Marker colors:** Customize native dots or color-code looting bag icons by the combined value of ground items on a tile.
-- **Wilderness player skulls:** Display white skulls for players outside your combat range and red skulls for those within it. These icons do not indicate whether a player is actually skulled.
 - **And more:** Check it out for yourself :)
+
+## Release scope
+
+This branch contains the v2 release candidate: Square HUD, the Zone/System Time/Coords info panel, minimap filters, and entity markers. Toolbar tools, popups, timers, alarms, notes, volume controls, and expanded info readouts are retained on [`development/v3`](https://github.com/Humperd7nck/minimap-customizer/tree/development/v3) for later releases.
+
+Settings remain editable through RuneLite's standard configuration panel. Info panel settings apply when the square minimap is enabled; looting bag colors apply when that ground-item marker style is selected.
+
+Source and data attribution is in [Third-party notices](THIRD_PARTY_NOTICES.md), also included in the plugin JAR.

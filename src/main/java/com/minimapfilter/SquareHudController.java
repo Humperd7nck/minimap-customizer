@@ -407,18 +407,18 @@ final class SquareHudController
             faulted = false;
             restore();
             refreshClassicOrbsGroup();
-            nativeCompass.update(config.showCompass());
+            nativeCompass.restore();
             return;
         }
         if (top != InterfaceID.TOPLEVEL_PRE_EOC && top != InterfaceID.TOPLEVEL_OSRS_STRETCH)
         {
             restore();
-            nativeCompass.update(config.showCompass());
+            nativeCompass.restore();
             return;
         }
         if (faulted)
         {
-            nativeCompass.update(config.showCompass());
+            nativeCompass.restore();
             return;
         }
         classicGroupRefreshFrames = 0;
@@ -432,14 +432,14 @@ final class SquareHudController
         try
         {
             apply(top == InterfaceID.TOPLEVEL_PRE_EOC ? MODERN : CLASSIC_RESIZABLE);
-            if (snapshot == null) { nativeCompass.update(config.showCompass()); }
+            if (snapshot == null) { nativeCompass.restore(); }
         }
         catch (RuntimeException ex)
         {
             // Fail back to the game's interface instead of leaving a half-applied HUD.
             faulted = true;
             restore();
-            nativeCompass.update(config.showCompass());
+            nativeCompass.restore();
             LOG.warn("Square HUD was restored after an interface error. Turn Enable square minimap off and on to retry.", ex);
         }
     }
@@ -475,6 +475,7 @@ final class SquareHudController
             ? wilderness.getWidth() : 0;
         int wildernessHeight = wildernessWidth > 0 ? wilderness.getHeight() : 0;
         boolean wildernessVisible = wildernessWidth > 0 && indicatorHasContent(wilderness);
+        if (!locationInitialized) { refreshLocation(); }
         int footerHeight = SquareHudGeometry.footerHeightForControls(
             footerControlHeight(InterfaceID.Orbs.XP_DROPS),
             footerControlHeight(InterfaceID.Orbs.ORB_WORLDMAP));
